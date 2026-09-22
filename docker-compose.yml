@@ -49,7 +49,7 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio
+    image: quay.io/minio/minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
@@ -58,7 +58,7 @@ services:
     volumes: [miniodata:/data]
 
   minio-init:
-    image: minio/mc
+    image: quay.io/minio/mc
     depends_on: [minio]
     env_file: .env
     entrypoint: >
@@ -73,6 +73,12 @@ services:
   migrate:
     build: { context: ., target: dev }
     env_file: .env
+    environment: &container-hosts
+      DB_HOST: postgres
+      REDIS_URL: redis://redis:6379
+      RMQ_URL: amqp://${RMQ_USER}:${RMQ_PASSWORD}@rabbitmq:5672
+      S3_ENDPOINT: http://minio:9000
+      SMTP_URL: smtp://mailpit:1025
     command: npm run migration:run
     restart: "no"
     depends_on:
@@ -81,6 +87,7 @@ services:
   api:
     build: { context: ., target: dev }
     env_file: .env
+    environment: *container-hosts
     command: npm run start:dev
     volumes: ["./src:/app/src"]
     labels:
@@ -100,6 +107,7 @@ services:
   worker:
     build: { context: ., target: dev }
     env_file: .env
+    environment: *container-hosts
     command: npm run start:worker:dev
     volumes: ["./src:/app/src"]
     depends_on:

@@ -16,4 +16,4 @@ facade service or a RabbitMQ event — never another module's repository.
 | `sync` | — | — |
 | `dashboard` | — | — |
 
-Every schema change: edit the entity → `npm run migration:generate --name=<Change>` → review the file → `npm run migration:run`.
+Every schema change: edit the entity → `npm run migration:generate -- src/database/migrations/<Change>` → review the file → `npm run migration:run`.

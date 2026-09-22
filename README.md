@@ -35,7 +35,7 @@ Without Docker for the app itself: start only the dependencies (`docker compose 
 | `npm test` · `npm run test:cov` | unit tests (Jest) |
 | `npm run lint` · `npm run format` | ESLint · Prettier |
 | `npm run build` | compile to `dist/` |
-| `npm run migration:generate --name=AddX` | generate a migration from entity changes (**after every entity change**) |
+| `npm run migration:generate -- src/database/migrations/AddX` | generate a migration from entity changes (**after every entity change**) |
 | `npm run migration:run` · `migration:revert` | apply / roll back |
 
 ## Conventions (short version — details in `docs/design.md` and the team standard)
