@@ -27,6 +27,9 @@ export const envValidationSchema = Joi.object({
   S3_ENDPOINT: Joi.string().optional(), // MinIO locally
 
   JWT_SECRET: Joi.string().min(32).required(),
+  JWT_ACCESS_TTL: Joi.string().default('15m'),
+  REFRESH_TTL_DAYS: Joi.number().default(30),
+  SHUTDOWN_DRAIN_MS: Joi.number().default(20000),
   LINE_CHANNEL_SECRET: Joi.string().optional(),
   FB_APP_SECRET: Joi.string().optional(),
   SMTP_URL: Joi.string().optional(),

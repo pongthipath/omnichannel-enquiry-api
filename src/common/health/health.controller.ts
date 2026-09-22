@@ -11,8 +11,10 @@ import {
   HealthCheckService,
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
+import { Public } from '../auth/auth.decorators';
 import { ShutdownState } from './shutdown.state';
 
+@Public() // probed by the load balancer without a token
 @ApiTags('Health')
 @Controller({ path: 'health', version: VERSION_NEUTRAL }) // /api/health/* — load balancer path, not versioned
 export class HealthController {

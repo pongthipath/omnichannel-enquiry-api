@@ -4,6 +4,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { RedisIoAdapter } from './common/realtime/redis-io.adapter';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true }); // raw body: webhook signatures
@@ -17,6 +18,11 @@ async function bootstrap(): Promise<void> {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
   app.enableShutdownHooks();
+
+  // Socket.IO across instances via Redis (design §15)
+  const ioAdapter = new RedisIoAdapter(app, process.env.REDIS_URL ?? 'redis://localhost:6379');
+  ioAdapter.connect();
+  app.useWebSocketAdapter(ioAdapter);
 
   const config = new DocumentBuilder()
     .setTitle('Omnichannel Enquiry API')

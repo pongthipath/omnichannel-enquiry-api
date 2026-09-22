@@ -6,26 +6,46 @@ Backend for the **Omnichannel Customer Enquiry** system — NestJS modular monol
 - System design: [`docs/design.md`](docs/design.md) (architecture, ER, API contract, offline sync & idempotency, omnichannel, SLA, permissions, scale & load balancing)
 - UX/UI: [`docs/ux-ui.md`](docs/ux-ui.md) · Scale assumptions: [`docs/scale-assumptions.md`](docs/scale-assumptions.md)
 
-> **Status:** project skeleton — config, database wiring (snake_case ↔ camelCase), Swagger, error format, health checks, graceful shutdown, Docker, CI/CD to AWS ECS. Feature modules are being implemented next (see [`src/modules/README.md`](src/modules/README.md)).
+> **Status:** core API working locally — auth (customer/staff, lockout, rotating refresh tokens), permission bitmask guard,
+> enquiries (idempotent create, list by scope, assign, 6-step status rules, escalate, auto-reopen), messages, offline
+> batch sync, product trigram search, Socket.IO realtime with Redis adapter. Verified end-to-end by `npm run smoke` (27 checks).
+> Not yet: attachments/S3, webhooks + channel simulator, tags, customer chat list, dashboard, SLA breach job (see `src/modules/README.md`).
 
-## Run locally
+## Run locally (recommended for development)
 
 ```bash
+npm install
 cp .env.example .env
-docker compose up -d                                  # postgres, redis, rabbitmq, minio, mailpit, migrate, api, worker, traefik
-docker compose up -d --scale api=3 --scale worker=2   # try horizontal scaling behind the load balancer
+docker compose up -d postgres redis rabbitmq minio minio-init mailpit   # data services only
+npm run migration:run
+npm run seed          # departments, roles, staff, customers, 30 products, SLA policies (safe to re-run)
+npm run start:dev     # API on http://localhost:4000
+npm run smoke         # (another terminal) end-to-end checks incl. the brief's offline test
 ```
+
+Everything in Docker instead: `docker compose up -d` (adds Traefik load balancer, one-shot `migrate`, `api`, `worker`),
+then `docker compose exec api npm run seed`. Scale test: `docker compose up -d --scale api=3 --scale worker=2`.
 
 | URL | What |
 |---|---|
 | http://localhost:4000/api/docs | Swagger (API documentation) |
 | http://localhost:4000/api/health/ready | readiness (used by the load balancer) |
-| http://localhost:8080 | Traefik dashboard (see the api replicas) |
+| http://localhost:8080 | Traefik dashboard (full Docker mode) |
 | http://localhost:15672 | RabbitMQ (omni / omni_dev_password) |
 | http://localhost:9001 | MinIO console (S3 locally) |
 | http://localhost:8025 | Mailpit (emails sent in dev) |
 
-Without Docker for the app itself: start only the dependencies (`docker compose up -d postgres redis rabbitmq minio minio-init mailpit`), set `DB_HOST=localhost` etc. in `.env`, then `npm install && npm run migration:run && npm run start:dev`.
+### Seeded accounts (password `Password123!`)
+
+| Account | Role / scope |
+|---|---|
+| `malee@bkkbistro.test` | customer (Bangkok Bistro) — also `purchasing@siamriverside.test`, `ann@cmbakehouse.test`, … |
+| `cs.agent@foodlink.test` | AGENT, Customer Service — own + department chats |
+| `qc.agent@foodlink.test` | AGENT, Quality Control |
+| `sales.agent@foodlink.test` | AGENT, Sales |
+| `cs.supervisor@foodlink.test` | SUPERVISOR — can assign others, change any status in scope, reopen |
+| `manager@foodlink.test` | MANAGER — sees all departments |
+| `admin@foodlink.test` | ADMIN — every permission |
 
 ## Scripts
 
@@ -37,6 +57,8 @@ Without Docker for the app itself: start only the dependencies (`docker compose 
 | `npm run build` | compile to `dist/` |
 | `npm run migration:generate -- src/database/migrations/AddX` | generate a migration from entity changes (**after every entity change**) |
 | `npm run migration:run` · `migration:revert` | apply / roll back |
+| `npm run seed` | idempotent dev/demo data |
+| `npm run smoke` | end-to-end checks against a running API |
 
 ## Conventions (short version — details in `docs/design.md` and the team standard)
 
