@@ -5,7 +5,7 @@ import { demoScenarios } from './demo-data';
 /**
  * Mock enquiries + conversations for demos (`npm run seed:demo`, after `npm run seed`).
  * Idempotent: each scenario has a fixed client_request_id, existing ones are skipped.
- * `npm run seed:demo -- --clean` first removes every other chat (e.g. left by `npm run smoke`) — dev only.
+ * `npm run seed:demo:clean` first removes every other chat (e.g. left by `npm run smoke`) — dev only.
  */
 const DEMO_ID_PREFIX = 'd0000000-';
 const scenarioId = (key: number) => `${DEMO_ID_PREFIX}0000-4000-8000-${String(key).padStart(12, '0')}`;
