@@ -19,6 +19,7 @@ cp .env.example .env
 docker compose up -d postgres redis rabbitmq minio minio-init mailpit   # data services only
 npm run migration:run
 npm run seed          # departments, roles, staff, customers, 30 products, SLA policies (safe to re-run)
+npm run seed:demo     # 10 mock enquiries + conversations covering every status (safe to re-run)
 npm run start:dev     # API on http://localhost:4000
 npm run smoke         # (another terminal) end-to-end checks incl. the brief's offline test
 ```
@@ -57,7 +58,8 @@ then `docker compose exec api npm run seed`. Scale test: `docker compose up -d -
 | `npm run build` | compile to `dist/` |
 | `npm run migration:generate -- src/database/migrations/AddX` | generate a migration from entity changes (**after every entity change**) |
 | `npm run migration:run` · `migration:revert` | apply / roll back |
-| `npm run seed` | idempotent dev/demo data |
+| `npm run seed` | idempotent base data (departments, roles, staff, customers, products, SLA) |
+| `npm run seed:demo` | mock enquiries + chat history for demos / UI work |
 | `npm run smoke` | end-to-end checks against a running API |
 
 ## Conventions (short version — details in `docs/design.md` and the team standard)
