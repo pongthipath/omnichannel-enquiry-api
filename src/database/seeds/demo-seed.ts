@@ -6,11 +6,13 @@ import { demoScenarios, demoTags } from './demo-data';
  * Mock enquiries + conversations for demos (`npm run seed:demo`, after `npm run seed`).
  * Idempotent: each scenario has a fixed client_request_id, existing ones are skipped.
  * `npm run seed:demo:clean` first removes every other chat (e.g. left by `npm run smoke`) — dev only.
+ * `npm run seed:demo:reset` removes ALL chats so the demo enquiries are rebuilt exactly as written — dev only.
  */
 const DEMO_ID_PREFIX = 'd0000000-';
 const scenarioId = (key: number) => `${DEMO_ID_PREFIX}0000-4000-8000-${String(key).padStart(12, '0')}`;
 const minutes = (n: number) => n * 60_000;
-const clean = process.argv.includes('--clean');
+const reset = process.argv.includes('--reset');
+const clean = reset || process.argv.includes('--clean');
 
 async function seedDemo(): Promise<void> {
   if (clean && process.env.NODE_ENV === 'production') throw new Error('--clean is for local databases only');
@@ -30,11 +32,13 @@ async function seedDemo(): Promise<void> {
 
     if (clean) {
       // chat_message rows go with their chat (ON DELETE CASCADE)
-      const [, removed] = await q.query(
-        `DELETE FROM chat WHERE client_request_id IS NULL OR client_request_id::text NOT LIKE $1`,
-        [`${DEMO_ID_PREFIX}%`],
-      );
-      console.log(`--clean: removed ${removed} non-demo chats`);
+      const [, removed] = reset
+        ? await q.query('DELETE FROM chat')
+        : await q.query(
+            `DELETE FROM chat WHERE client_request_id IS NULL OR client_request_id::text NOT LIKE $1`,
+            [`${DEMO_ID_PREFIX}%`],
+          );
+      console.log(`${reset ? '--reset' : '--clean'}: removed ${removed} chats`);
     }
 
     const slaMinutes = (type: string, priority: string) =>

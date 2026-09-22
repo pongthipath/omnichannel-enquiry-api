@@ -20,7 +20,8 @@ docker compose up -d postgres redis rabbitmq minio minio-init mailpit   # data s
 npm run migration:run
 npm run seed          # departments, roles, staff, customers, 30 products, SLA policies (safe to re-run)
 npm run seed:demo     # 10 mock enquiries + conversations covering every status (safe to re-run)
-                      # or `npm run seed:demo:clean` to also remove chats left by `npm run smoke`
+                      # `npm run seed:demo:clean` also removes chats left by `npm run smoke`
+                      # `npm run seed:demo:reset` rebuilds the demo set exactly (removes ALL chats)
 npm run start:dev     # API on http://localhost:4000
 npm run smoke         # (another terminal) end-to-end checks incl. the brief's offline test
 ```

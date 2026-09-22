@@ -27,6 +27,7 @@
     "seed": "ts-node src/database/seeds/seed.ts",
     "seed:demo": "ts-node src/database/seeds/demo-seed.ts",
     "seed:demo:clean": "ts-node src/database/seeds/demo-seed.ts --clean",
+    "seed:demo:reset": "ts-node src/database/seeds/demo-seed.ts --reset",
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
