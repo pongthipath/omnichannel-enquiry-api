@@ -12,6 +12,8 @@ export interface ListChatsParams {
   status?: ChatStatus[];
   q?: string;
   productId?: string;
+  customerId?: string;
+  tagId?: string;
   /** id of the last chat of the previous page */
   cursor?: string;
   limit: number;
@@ -67,8 +69,26 @@ export class ChatRepository {
     ChatAccessPolicy.applyScope(qb, 'chat', actor, p.scope);
     if (p.status?.length) qb.andWhere('chat.status IN (:...status)', { status: p.status });
     if (p.productId) qb.andWhere('chat.productId = :productId', { productId: p.productId });
+    if (p.customerId) qb.andWhere('chat.customerId = :customerId', { customerId: p.customerId });
+    if (p.tagId) {
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM chat_tag ct WHERE ct.chat_id = chat.id AND ct.tag_id = :tagId)',
+        { tagId: p.tagId },
+      );
+    }
     if (p.q) {
-      qb.andWhere('(chat.reference ILIKE :q OR chat.subject ILIKE :q)', { q: `%${p.q}%` });
+      // one search box for the chat list (design §16.10): reference, subject, customer, product and
+      // message text — the sub-queries use the trigram indexes. Internal notes are never searched here.
+      qb.andWhere(
+        `(chat.reference ILIKE :q OR chat.subject ILIKE :q
+          OR chat.customerId IN (SELECT c.id FROM customer c
+               WHERE c.company_name ILIKE :q OR c.contact_name ILIKE :q OR c.phone ILIKE :q)
+          OR chat.productId IN (SELECT p.id FROM product p
+               WHERE lower(p.code || ' ' || p.name || ' ' || coalesce(p.brand, '') || ' ' || coalesce(p.category, '')) LIKE lower(:q))
+          OR EXISTS (SELECT 1 FROM chat_message m
+               WHERE m.chat_id = chat.id AND m.is_internal = false AND m.body ILIKE :q))`,
+        { q: `%${p.q}%` },
+      );
     }
     // keyset pagination: stable, no duplicates across pages
     if (p.cursor) {

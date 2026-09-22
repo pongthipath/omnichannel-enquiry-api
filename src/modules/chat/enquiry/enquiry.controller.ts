@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
@@ -23,7 +34,9 @@ import {
   EnquiryPageDto,
   EscalateDto,
   ListEnquiriesQuery,
+  UpdateEnquiryDto,
 } from './enquiry.dto';
+import { SetChatTagsDto } from '../tag/tag.dto';
 import { EnquiryService } from './enquiry.service';
 
 /** Path is /conversations as required by the brief; internally a conversation is a `chat` (1 chat = 1 enquiry). */
@@ -103,6 +116,30 @@ export class EnquiryController {
     @Body() dto: ChangeStatusDto,
   ): Promise<EnquiryDto> {
     return this.enquiries.changeStatus(actor, id, dto.status, dto.version);
+  }
+
+  @Patch(':id')
+  @RequirePermission(Permission.INBOX_ENQUIRY_EDIT)
+  @ApiOperation({ summary: 'Edit details: subject, type, sub type, priority, product (SLA re-snapshot)' })
+  @ApiOkResponse({ type: EnquiryDto })
+  update(
+    @CurrentActor() actor: Actor,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateEnquiryDto,
+  ): Promise<EnquiryDto> {
+    return this.enquiries.update(actor, id, dto);
+  }
+
+  @Put(':id/tags')
+  @RequirePermission(Permission.INBOX_TAG_APPLY)
+  @ApiOperation({ summary: 'Replace the enquiry tags with this set' })
+  @ApiOkResponse({ type: EnquiryDto })
+  setTags(
+    @CurrentActor() actor: Actor,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetChatTagsDto,
+  ): Promise<EnquiryDto> {
+    return this.enquiries.setTags(actor, id, dto.tagIds);
   }
 
   @Put(':id/escalate')

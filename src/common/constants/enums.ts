@@ -59,4 +59,6 @@ export enum ChatEventKind {
   REASSIGNED = 'REASSIGNED',
   ESCALATED = 'ESCALATED',
   REOPENED = 'REOPENED',
+  /** details edited in the Context Panel (type, priority, product, subject) */
+  UPDATED = 'UPDATED',
 }

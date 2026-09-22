@@ -22,6 +22,9 @@ import { StaffService } from '../../staff/profile/staff.service';
 import { ChatEvent, chatRooms } from '../chat-events';
 import { ChatMessageRepository } from '../message/chat-message.repository';
 import { SlaService } from '../sla/sla.service';
+import { TagSummaryDto } from '../tag/tag.dto';
+import { TagRepository } from '../tag/tag.repository';
+import { TagService } from '../tag/tag.service';
 import { ChatAccessPolicy } from './chat-access.policy';
 import { applyStatusChange } from './chat-lifecycle';
 import { Chat } from './chat.entity';
@@ -33,9 +36,12 @@ import {
   EnquiryDto,
   EnquiryPageDto,
   ListEnquiriesQuery,
+  UpdateEnquiryDto,
 } from './enquiry.dto';
 
 const PREVIEW_LENGTH = 140;
+
+type ChatChange = { kind: ChatEventKind; data: Record<string, unknown>; internal?: boolean };
 
 @Injectable()
 export class EnquiryService {
@@ -48,6 +54,8 @@ export class EnquiryService {
     private readonly staff: StaffService,
     private readonly customers: CustomerService,
     private readonly realtime: RealtimePublisher,
+    private readonly tags: TagRepository,
+    private readonly tagService: TagService,
   ) {}
 
   /**
@@ -127,17 +135,54 @@ export class EnquiryService {
     const limit = query.limit ?? 30;
     const rows = await this.chats.list(actor, { ...query, limit: limit + 1 });
     const page = rows.slice(0, limit);
-    const customers = await this.customers.findSummaries(page.map((c) => c.customerId));
     return {
-      items: page.map((c) =>
-        EnquiryDto.from(
-          c,
-          ChatAccessPolicy.visibility(actor, c),
-          this.customerSummary(customers.get(c.customerId)),
-        ),
-      ),
+      items: await this.toDtos(actor, page),
       nextCursor: rows.length > limit ? page[page.length - 1].id : null,
     };
+  }
+
+  /** Edit the enquiry's details (Context Panel). Type/priority changes re-snapshot the SLA target. */
+  async update(actor: Actor, id: string, dto: UpdateEnquiryDto): Promise<EnquiryDto> {
+    const staffActor = this.requireStaff(actor);
+    if (!staffActor.can(Permission.INBOX_ENQUIRY_EDIT)) throw new ForbiddenException('auth.forbidden');
+    const slaStart = (c: Chat) => c.lastReopenedAt ?? c.createdAt;
+
+    return this.mutate(staffActor, id, async (chat) => {
+      const changes: Record<string, unknown> = {};
+      const set = <K extends keyof Chat>(key: K, value: Chat[K]) => {
+        if (chat[key] === value) return;
+        changes[key] = { from: chat[key], to: value };
+        chat[key] = value;
+      };
+      if (dto.subject !== undefined) set('subject', dto.subject.trim());
+      if (dto.enquiryType !== undefined) set('enquiryType', dto.enquiryType);
+      if (dto.enquirySubType !== undefined) set('enquirySubType', dto.enquirySubType || null);
+      if (dto.priority !== undefined) set('priority', dto.priority);
+      if (dto.productId !== undefined) set('productId', dto.productId);
+      if (!Object.keys(changes).length) return null;
+
+      if (('enquiryType' in changes || 'priority' in changes) && ![S.RESOLVED, S.CLOSED].includes(chat.status)) {
+        const target = await this.sla.targetFor(chat.enquiryType, chat.priority, slaStart(chat));
+        chat.slaMinutes = target.slaMinutes;
+        chat.slaDueAt = new Date(target.slaDueAt.getTime() + chat.slaPausedSeconds * 1000);
+        chat.isSlaBreached = chat.slaDueAt.getTime() < Date.now();
+      }
+      return { kind: ChatEventKind.UPDATED, data: { changes }, internal: true };
+    });
+  }
+
+  /** Replace the enquiry's tags (INBOX_TAG_APPLY). */
+  async setTags(actor: Actor, id: string, tagIds: string[]): Promise<EnquiryDto> {
+    const staffActor = this.requireStaff(actor);
+    if (!staffActor.can(Permission.INBOX_TAG_APPLY)) throw new ForbiddenException('auth.forbidden');
+    await this.tagService.assertApplicableToEnquiry(tagIds);
+    const unique = [...new Set(tagIds)];
+
+    // tags are not a timeline event (no message row); mutate still emits chat.updated with the new tags
+    return this.mutate(staffActor, id, async (chat, m) => {
+      await this.tags.replaceForChat(m, chat.id, unique);
+      return null;
+    });
   }
 
   async get(actor: Actor, id: string): Promise<EnquiryDto> {
@@ -241,9 +286,7 @@ export class EnquiryService {
   private async mutate(
     actor: Actor,
     id: string,
-    change: (
-      chat: Chat,
-    ) => { kind: ChatEventKind; data: Record<string, unknown>; internal?: boolean } | null,
+    change: (chat: Chat, m: EntityManager) => ChatChange | null | Promise<ChatChange | null>,
   ): Promise<EnquiryDto> {
     let before: Pick<Chat, 'customerId' | 'assignedStaffId' | 'departmentId'> | null = null;
     const chat = await this.dataSource.transaction(async (m) => {
@@ -255,7 +298,7 @@ export class EnquiryService {
         assignedStaffId: locked.assignedStaffId,
         departmentId: locked.departmentId,
       };
-      const event = change(locked);
+      const event = await change(locked, m);
       if (!event) return locked;
       const saved = await this.chats.save(m, locked);
       await this.messages.insertIgnoringDuplicate(m, {
@@ -287,11 +330,28 @@ export class EnquiryService {
   }
 
   private async toDto(actor: Actor, chat: Chat): Promise<EnquiryDto> {
-    const customers = await this.customers.findSummaries([chat.customerId]);
-    return EnquiryDto.from(
-      chat,
-      ChatAccessPolicy.visibility(actor, chat),
-      this.customerSummary(customers.get(chat.customerId)),
+    return (await this.toDtos(actor, [chat]))[0];
+  }
+
+  /** One lookup per kind of name for the whole page — never one query per row. */
+  async toDtos(actor: Actor, chats: Chat[]): Promise<EnquiryDto[]> {
+    const ids = <K extends keyof Chat>(key: K) =>
+      [...new Set(chats.map((c) => c[key]).filter(Boolean))] as string[];
+    const [customers, tags, staff, departments] = await Promise.all([
+      this.customers.findSummaries(ids('customerId')),
+      this.tags.findForChats(chats.map((c) => c.id)),
+      this.staff.findByIds(ids('assignedStaffId')),
+      this.departments.findByIds(ids('departmentId')),
+    ]);
+    const staffName = new Map(staff.map((s) => [s.id, s.name]));
+    const deptName = new Map(departments.map((d) => [d.id, d.nameTh]));
+    return chats.map((c) =>
+      EnquiryDto.from(c, ChatAccessPolicy.visibility(actor, c), {
+        customer: this.customerSummary(customers.get(c.customerId)),
+        tags: (tags.get(c.id) ?? []).map(TagSummaryDto.from),
+        assignedStaffName: c.assignedStaffId ? (staffName.get(c.assignedStaffId) ?? null) : null,
+        departmentName: deptName.get(c.departmentId) ?? null,
+      }),
     );
   }
 

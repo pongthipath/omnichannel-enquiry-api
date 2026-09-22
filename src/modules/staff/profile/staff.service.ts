@@ -1,6 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import * as argon2 from 'argon2';
+import { In, Repository } from 'typeorm';
+import { RealtimePublisher, rooms } from '../../../common/realtime/realtime.publisher';
+import { CreateStaffDto, StaffDetailDto, UpdateStaffDto } from '../staff.dto';
 import { StaffActor } from '../../../common/auth/actor';
 import { ActorResolver } from '../../../common/auth/actor-resolver';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -23,6 +26,7 @@ export class StaffService implements ActorResolver {
   constructor(
     @InjectRepository(Staff) private readonly staffRepo: Repository<Staff>,
     private readonly redis: RedisService,
+    private readonly realtime: RealtimePublisher,
   ) {}
 
   /** Cached 60s; invalidate with `forgetActor` when a role/staff changes (realtime §10.1). */
@@ -73,6 +77,64 @@ export class StaffService implements ActorResolver {
 
   findById(id: string): Promise<Staff | null> {
     return this.staffRepo.findOne({ where: { id } });
+  }
+
+  /** Includes inactive staff — old enquiries still show who handled them. */
+  findByIds(ids: string[]): Promise<Staff[]> {
+    return ids.length ? this.staffRepo.find({ where: { id: In(ids) } }) : Promise.resolve([]);
+  }
+
+  // ---------- settings page (SETTINGS_STAFF_MANAGE) ----------
+
+  async listForSettings(): Promise<StaffDetailDto[]> {
+    const rows = await this.staffRepo.find({
+      relations: { role: true, department: true },
+      order: { isActive: 'DESC', name: 'ASC' },
+    });
+    return rows.map(StaffDetailDto.fromFull);
+  }
+
+  async create(dto: CreateStaffDto): Promise<StaffDetailDto> {
+    const email = dto.email.trim().toLowerCase();
+    if (await this.findForLogin(email)) throw new ConflictException('staff.duplicateEmail');
+    const saved = await this.staffRepo.save({
+      email,
+      name: dto.name.trim(),
+      departmentId: dto.departmentId,
+      roleId: dto.roleId,
+      passwordHash: await argon2.hash(dto.password, { type: argon2.argon2id }),
+    });
+    this.announce(saved.id, 'created');
+    return this.detail(saved.id);
+  }
+
+  /** Changing role / department / active takes effect on the person's next request (cache dropped). */
+  async update(actorId: string, id: string, dto: UpdateStaffDto): Promise<StaffDetailDto> {
+    const staff = await this.staffRepo.findOne({ where: { id } });
+    if (!staff) throw new NotFoundException('staff.notFound');
+    if (id === actorId && dto.isActive === false) throw new ConflictException('staff.cannotDisableSelf');
+    if (dto.name !== undefined) staff.name = dto.name.trim();
+    if (dto.departmentId !== undefined) staff.departmentId = dto.departmentId;
+    if (dto.roleId !== undefined) staff.roleId = dto.roleId;
+    if (dto.isActive !== undefined) staff.isActive = dto.isActive;
+    await this.staffRepo.save(staff);
+    await this.forgetActor(id);
+    this.announce(id, 'updated');
+    return this.detail(id);
+  }
+
+  async forgetActorsOfRole(roleId: string): Promise<void> {
+    const rows = await this.staffRepo.find({ where: { roleId }, select: { id: true } });
+    await Promise.all(rows.map((r) => this.forgetActor(r.id)));
+  }
+
+  private async detail(id: string): Promise<StaffDetailDto> {
+    const s = await this.staffRepo.findOne({ where: { id }, relations: { role: true, department: true } });
+    return StaffDetailDto.fromFull(s!);
+  }
+
+  private announce(id: string, action: 'created' | 'updated') {
+    this.realtime.emit('staff.changed', [rooms.allStaff], { entity: 'staff', id, action });
   }
 
   private toActor(v: CachedActor): StaffActor {

@@ -145,6 +145,29 @@ async function main() {
   const managerSees = await call('GET', `/conversations/${id}`, manager);
   check('manager (scope all) can see it', managerSees.status === 200 && managerSees.data?.visibility !== 'MINE');
 
+  // ----- design v2 endpoints: tags, edit details, dashboard, customers -----
+  const admin = await login('admin@foodlink.test', 'staff');
+  const tagName = `smoke-${Date.now()}`;
+  const tag = await call('POST', '/tags', admin, { name: tagName, color: 'green' });
+  check('admin creates a tag', tag.status === 201 && tag.data?.usageCount === 0);
+  const dupTag = await call('POST', '/tags', admin, { name: tagName.toUpperCase() });
+  check('same tag name (any case) → 409 tag.duplicateName', dupTag.status === 409);
+  const tagged = await call('PUT', `/conversations/${id}/tags`, supervisor, { tagIds: [tag.data.id] });
+  check('supervisor tags the enquiry', tagged.data?.tags?.[0]?.name === tagName);
+  const byTag = await call('GET', `/conversations?tagId=${tag.data.id}`, manager);
+  check('filter enquiries by tag', byTag.data?.items?.length === 1 && byTag.data.items[0].id === id);
+  const edited = await call('PATCH', `/conversations/${id}`, supervisor, { priority: 'URGENT' });
+  check('supervisor edits priority (SLA re-snapshot)', edited.data?.priority === 'URGENT' && edited.data?.slaMinutes > 0);
+  const agentEdit = await call('PATCH', `/conversations/${id}`, csAgent, { priority: 'LOW' });
+  check('agent without ENQUIRY_EDIT → 403', agentEdit.status === 403);
+  const dash = await call('GET', '/dashboard/summary', manager);
+  check('dashboard summary has totals + 6 statuses', dash.status === 200 && dash.data?.byStatus?.length === 6);
+  const customers = await call('GET', '/customers?q=bistro', manager);
+  check('customers page search', customers.data?.items?.[0]?.code === 'CUS-00128' && customers.data.items[0].openEnquiries >= 1);
+  await call('DELETE', `/tags/${tag.data.id}`, admin);
+  const afterDelete = await call('GET', `/conversations/${id}`, manager);
+  check('deleting a tag removes it from enquiries', afterDelete.data?.tags?.length === 0);
+
   socket.close();
   console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
   process.exit(failures ? 1 : 0);

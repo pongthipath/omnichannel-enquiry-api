@@ -8,6 +8,8 @@ export const rooms = {
   staff: (id: string) => `staff:${id}`,
   department: (id: string) => `department:${id}`,
   all: 'scope:all',
+  /** every signed-in staff member — settings changes (tags, departments, roles) */
+  allStaff: 'staff:all',
 };
 
 /** Standard payload for every realtime event (design §10.1). */

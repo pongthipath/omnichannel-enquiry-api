@@ -64,8 +64,10 @@ export class MessageDto {
   @ApiPropertyOptional({ nullable: true }) deliveredAt: Date | null;
   @ApiPropertyOptional({ nullable: true }) readAt: Date | null;
   @ApiProperty() createdAt: Date;
+  @ApiPropertyOptional({ nullable: true, example: 'สุดา (CS)', description: 'staff name or customer contact' })
+  senderName: string | null;
 
-  static from(m: ChatMessage): MessageDto {
+  static from(m: ChatMessage, senderName: string | null = null): MessageDto {
     return {
       id: m.id,
       chatId: m.chatId,
@@ -73,6 +75,7 @@ export class MessageDto {
       channel: m.channel,
       senderType: m.senderType,
       senderId: m.senderId,
+      senderName,
       messageType: m.messageType,
       body: m.body,
       eventData: m.eventData,

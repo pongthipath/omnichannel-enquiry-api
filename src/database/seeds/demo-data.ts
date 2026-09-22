@@ -156,3 +156,20 @@ export const demoScenarios: DemoScenario[] = [
     ],
   },
 ];
+
+/** Team-made tags (settings page) and the demo enquiries (scenario keys) that carry them. */
+export const demoTags: {
+  name: string;
+  color: string;
+  appliesTo: 'ENQUIRY' | 'CUSTOMER' | 'BOTH';
+  description: string;
+  scenarios: number[];
+}[] = [
+  { name: 'ขนส่งล่าช้า', color: 'yellow', appliesTo: 'ENQUIRY', description: 'ของมาส่งช้ากว่าที่นัดลูกค้าไว้', scenarios: [10] },
+  { name: 'ลูกค้าประจำ', color: 'blue', appliesTo: 'BOTH', description: 'สั่งซื้อต่อเนื่อง ให้ความสำคัญเป็นพิเศษ', scenarios: [10, 6] },
+  { name: 'สินค้าเสียหาย', color: 'red', appliesTo: 'ENQUIRY', description: 'กล่องบุบ แตก หรือเสียระหว่างขนส่ง', scenarios: [5] },
+  { name: 'รอเคลม', color: 'red', appliesTo: 'ENQUIRY', description: 'ต้องส่งเรื่องเคลมกับซัพพลายเออร์', scenarios: [] },
+  { name: 'ขอใบเสนอราคา', color: 'green', appliesTo: 'ENQUIRY', description: 'ลูกค้าขอราคาสั่งจำนวนมาก', scenarios: [6, 3] },
+  { name: 'ลูกค้าโรงแรม', color: 'cyan', appliesTo: 'CUSTOMER', description: 'กลุ่มลูกค้าโรงแรมและจัดเลี้ยง', scenarios: [] },
+  { name: 'สต็อกไม่พอ', color: 'gray', appliesTo: 'ENQUIRY', description: 'ต้องเช็กกับคลังสินค้าก่อนตอบ', scenarios: [1] },
+];

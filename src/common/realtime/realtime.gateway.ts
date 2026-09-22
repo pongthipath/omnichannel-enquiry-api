@@ -39,7 +39,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
         await client.join(rooms.customer(actor.id));
         return;
       }
-      const joined = [rooms.staff(actor.id)];
+      const joined = [rooms.staff(actor.id), rooms.allStaff];
       if (actor.can(Permission.INBOX_SCOPE_DEPARTMENT))
         joined.push(rooms.department(actor.departmentId));
       if (actor.can(Permission.INBOX_SCOPE_ALL)) joined.push(rooms.all);

@@ -13,6 +13,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { Channel, ChatStatus, EnquiryType, Priority } from '../../../common/constants/enums';
+import { TagSummaryDto } from '../tag/tag.dto';
 import { ScopeFilter, Visibility } from './chat-access.policy';
 import { Chat } from './chat.entity';
 
@@ -96,6 +97,16 @@ export class ListEnquiriesQuery {
   @IsUUID()
   productId?: string;
 
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  tagId?: string;
+
   @ApiPropertyOptional({ description: 'opaque cursor from the previous page' })
   @IsOptional()
   @IsString()
@@ -141,10 +152,48 @@ export class EscalateDto {
   reason: string;
 }
 
+export class UpdateEnquiryDto {
+  @ApiPropertyOptional({ maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  subject?: string;
+
+  @ApiPropertyOptional({ enum: EnquiryType })
+  @IsOptional()
+  @IsEnum(EnquiryType)
+  enquiryType?: EnquiryType;
+
+  @ApiPropertyOptional({ maxLength: 60, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  enquirySubType?: string;
+
+  @ApiPropertyOptional({ enum: Priority, description: 'changing type or priority recalculates the SLA' })
+  @IsOptional()
+  @IsEnum(Priority)
+  priority?: Priority;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'null removes the product' })
+  @IsOptional()
+  @IsUUID()
+  productId?: string | null;
+}
+
 export class CustomerSummaryDto {
   @ApiProperty({ format: 'uuid' }) id: string;
   @ApiProperty({ example: 'Bangkok Bistro Co.' }) companyName: string;
   @ApiPropertyOptional({ nullable: true }) contactName: string | null;
+}
+
+/** Names shown with an enquiry, looked up once per page (no N+1). */
+export interface EnquiryExtras {
+  customer?: CustomerSummaryDto | null;
+  tags?: TagSummaryDto[];
+  assignedStaffName?: string | null;
+  departmentName?: string | null;
 }
 
 export class EnquiryDto {
@@ -163,6 +212,9 @@ export class EnquiryDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true }) productId: string | null;
   @ApiProperty({ format: 'uuid' }) departmentId: string;
   @ApiPropertyOptional({ format: 'uuid', nullable: true }) assignedStaffId: string | null;
+  @ApiPropertyOptional({ nullable: true, example: 'สุดา (CS)' }) assignedStaffName: string | null;
+  @ApiPropertyOptional({ nullable: true, example: 'ฝ่ายบริการลูกค้า' }) departmentName: string | null;
+  @ApiProperty({ type: [TagSummaryDto] }) tags: TagSummaryDto[];
   @ApiProperty() slaMinutes: number;
   @ApiProperty() slaDueAt: Date;
   @ApiPropertyOptional({ nullable: true }) slaPausedAt: Date | null;
@@ -176,7 +228,7 @@ export class EnquiryDto {
   @ApiProperty() version: number;
   @ApiProperty() createdAt: Date;
 
-  static from(c: Chat, visibility: Visibility, customer?: CustomerSummaryDto | null): EnquiryDto {
+  static from(c: Chat, visibility: Visibility, extras: EnquiryExtras = {}): EnquiryDto {
     return {
       id: c.id,
       reference: c.reference,
@@ -188,10 +240,13 @@ export class EnquiryDto {
       priority: c.priority,
       originChannel: c.originChannel,
       customerId: c.customerId,
-      customer: customer ?? null,
+      customer: extras.customer ?? null,
       productId: c.productId,
       departmentId: c.departmentId,
       assignedStaffId: c.assignedStaffId,
+      assignedStaffName: extras.assignedStaffName ?? null,
+      departmentName: extras.departmentName ?? null,
+      tags: extras.tags ?? [],
       slaMinutes: c.slaMinutes,
       slaDueAt: c.slaDueAt,
       slaPausedAt: c.slaPausedAt,

@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -55,5 +55,14 @@ export class CatalogController {
   @ApiOkResponse({ type: [ProductDto] })
   async search(@Query() query: SearchProductsQuery): Promise<ProductDto[]> {
     return (await this.products.search(query.q ?? '')).map(ProductDto.from);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'One product (enquiry detail panel)' })
+  @ApiOkResponse({ type: ProductDto })
+  async getOne(@Param('id', ParseUUIDPipe) id: string): Promise<ProductDto> {
+    const product = await this.products.findById(id);
+    if (!product) throw new NotFoundException('product.notFound');
+    return ProductDto.from(product);
   }
 }

@@ -1,6 +1,6 @@
 import { ChatStatus, SenderType } from '../../common/constants/enums';
 import dataSource from '../data-source';
-import { demoScenarios } from './demo-data';
+import { demoScenarios, demoTags } from './demo-data';
 
 /**
  * Mock enquiries + conversations for demos (`npm run seed:demo`, after `npm run seed`).
@@ -104,6 +104,25 @@ async function seedDemo(): Promise<void> {
         );
       }
       created++;
+    }
+
+    // tags: created once by name, attached to their demo enquiries (pairs already there are skipped)
+    for (const t of demoTags) {
+      await q.query(
+        `INSERT INTO tag (name, color, applies_to, description)
+         SELECT $1::varchar, $2::varchar, $3::varchar, $4::varchar
+         WHERE NOT EXISTS (SELECT 1 FROM tag WHERE lower(name) = lower($1::varchar))`,
+        [t.name, t.color, t.appliesTo, t.description],
+      );
+      for (const key of t.scenarios) {
+        await q.query(
+          `INSERT INTO chat_tag (chat_id, tag_id)
+           SELECT c.id, tg.id FROM chat c, tag tg
+           WHERE c.client_request_id = $1::uuid AND lower(tg.name) = lower($2::varchar)
+           ON CONFLICT DO NOTHING`,
+          [scenarioId(key), t.name],
+        );
+      }
     }
     await q.commitTransaction();
     console.log(`demo data: ${created} enquiries added (${demoScenarios.length - created} already existed)`);

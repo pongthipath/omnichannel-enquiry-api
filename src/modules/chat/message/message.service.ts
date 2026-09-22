@@ -21,6 +21,9 @@ import { applyStatusChange } from '../enquiry/chat-lifecycle';
 import { Chat } from '../enquiry/chat.entity';
 import { ChatRepository } from '../enquiry/chat.repository';
 import { SlaService } from '../sla/sla.service';
+import { CustomerService } from '../../customer/customer.service';
+import { StaffService } from '../../staff/profile/staff.service';
+import { ChatMessage } from './chat-message.entity';
 import { ChatMessageRepository } from './chat-message.repository';
 import { ListMessagesQuery, MessageDto, MessagePageDto, SendMessageDto } from './message.dto';
 
@@ -34,6 +37,8 @@ export class MessageService {
     private readonly messages: ChatMessageRepository,
     private readonly sla: SlaService,
     private readonly realtime: RealtimePublisher,
+    private readonly staff: StaffService,
+    private readonly customers: CustomerService,
   ) {}
 
   async list(actor: Actor, chatId: string, query: ListMessagesQuery): Promise<MessagePageDto> {
@@ -47,10 +52,25 @@ export class MessageService {
       limit: limit + 1,
     });
     const page = rows.slice(0, limit);
+    const names = await this.senderNames(page);
     return {
-      items: page.map(MessageDto.from),
+      items: page.map((m) => MessageDto.from(m, (m.senderId && names.get(m.senderId)) || null)),
       nextCursor: rows.length > limit ? page[page.length - 1].id : null,
     };
+  }
+
+  /** senderId → display name for one page (staff name, or the customer's contact / company). */
+  private async senderNames(rows: ChatMessage[]): Promise<Map<string, string>> {
+    const ids = (type: SenderType) =>
+      [...new Set(rows.filter((m) => m.senderType === type && m.senderId).map((m) => m.senderId!))];
+    const [staff, customers] = await Promise.all([
+      this.staff.findByIds(ids(SenderType.STAFF)),
+      this.customers.findSummaries(ids(SenderType.CUSTOMER)),
+    ]);
+    return new Map([
+      ...staff.map((s) => [s.id, s.name] as [string, string]),
+      ...[...customers.values()].map((c) => [c.id, c.contactName ?? c.companyName] as [string, string]),
+    ]);
   }
 
   /**
@@ -116,7 +136,11 @@ export class MessageService {
       };
     });
 
-    const message = MessageDto.from(result.message);
+    const names = await this.senderNames([result.message]);
+    const message = MessageDto.from(
+      result.message,
+      (result.message.senderId && names.get(result.message.senderId)) || null,
+    );
     if (result.created) {
       this.realtime.emit(
         ChatEvent.MESSAGE_CREATED,
