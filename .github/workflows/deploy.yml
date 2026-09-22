@@ -1,0 +1,86 @@
+name: deploy
+
+# main → dev automatically · prod by hand (GitHub environment "prod" should require reviewers)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, prod]
+        required: true
+      image_tag:
+        description: "Optional tag (use 'bootstrap' for the very first image)"
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'dev' }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+      # values from `terraform output deploy` in the infra repo, set as environment variables in GitHub
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      CLUSTER: ${{ vars.ECS_CLUSTER }}
+      API_SERVICE: ${{ vars.ECS_API_SERVICE }}
+      WORKER_SERVICE: ${{ vars.ECS_WORKER_SERVICE }}
+      MIGRATE_TASK: ${{ vars.ECS_MIGRATE_TASK_FAMILY }}
+      SUBNETS: ${{ vars.ECS_SUBNETS }}
+      SECURITY_GROUP: ${{ vars.ECS_SECURITY_GROUP }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: build and push (ARM64, matches Fargate runtime)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: prod
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: new task definitions with this image
+        run: |
+          IMAGE="$ECR_REPOSITORY:$IMAGE_TAG"
+          for family in "$MIGRATE_TASK" "$API_SERVICE" "$WORKER_SERVICE"; do
+            aws ecs describe-task-definition --task-definition "$family" --query taskDefinition \
+              | jq --arg img "$IMAGE" '.containerDefinitions[0].image = $img
+                  | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)' \
+              > "td-$family.json"
+            aws ecs register-task-definition --cli-input-json "file://td-$family.json" --query taskDefinition.taskDefinitionArn --output text > "arn-$family.txt"
+          done
+
+      - name: run migrations once (before rolling out new code)
+        run: |
+          TASK_ARN=$(aws ecs run-task --cluster "$CLUSTER" --launch-type FARGATE \
+            --task-definition "$(cat arn-$MIGRATE_TASK.txt)" \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN"
+          EXIT=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "migrate exit code: $EXIT"
+          test "$EXIT" = "0"
+
+      - name: roll out api and worker (circuit breaker rolls back on failure)
+        run: |
+          aws ecs update-service --cluster "$CLUSTER" --service "$API_SERVICE" --task-definition "$(cat arn-$API_SERVICE.txt)" > /dev/null
+          aws ecs update-service --cluster "$CLUSTER" --service "$WORKER_SERVICE" --task-definition "$(cat arn-$WORKER_SERVICE.txt)" > /dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$API_SERVICE" "$WORKER_SERVICE"
