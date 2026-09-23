@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
-import { Actor, isStaff } from '../../../common/auth/actor';
+import { Actor, isStaff, StaffActor } from '../../../common/auth/actor';
 import {
   Channel,
   ChatEventKind,
@@ -28,7 +28,14 @@ import { AttachmentKind } from '../attachment/chat-message-attachment.entity';
 import { StaffService } from '../../staff/profile/staff.service';
 import { ChatMessage } from './chat-message.entity';
 import { ChatMessageRepository } from './chat-message.repository';
-import { ListMessagesQuery, MessageDto, MessagePageDto, SendMessageDto } from './message.dto';
+import {
+  CustomerMessagePageDto,
+  ListCustomerMessagesQuery,
+  ListMessagesQuery,
+  MessageDto,
+  MessagePageDto,
+  SendMessageDto,
+} from './message.dto';
 
 const PREVIEW_LENGTH = 140;
 
@@ -66,6 +73,46 @@ export class MessageService {
     return {
       items: page.map((m) => MessageDto.from(m, (m.senderId && names.get(m.senderId)) || null, files.get(m.id) ?? [])),
       nextCursor: rows.length > limit ? page[page.length - 1].id : null,
+    };
+  }
+
+  /**
+   * Everything one customer wrote or was told, across their enquiries (design A9). `q` searches the
+   * text (A10) and needs its own permission — an agent may read a thread without being able to
+   * search every word of it.
+   */
+  async listForCustomer(
+    actor: StaffActor,
+    customerId: string,
+    query: ListCustomerMessagesQuery,
+  ): Promise<CustomerMessagePageDto> {
+    const q = query.q?.trim();
+    if (q && !actor.can(Permission.INBOX_CUSTOMER_CHAT_SEARCH_MESSAGES)) {
+      throw new ForbiddenException('auth.forbidden');
+    }
+    const limit = query.limit ?? 30;
+    const { entities, raw } = await this.messages.listForCustomer(
+      customerId,
+      {
+        includeInternal: actor.can(Permission.INBOX_CHAT_INTERNAL_VIEW),
+        q: q || undefined,
+        beforeId: query.before,
+        limit: limit + 1,
+      },
+      (qb) => ChatAccessPolicy.applyScope(qb as never, 'chat', actor),
+    );
+    const page = entities.slice(0, limit);
+    const [names, files] = await Promise.all([
+      this.senderNames(page),
+      this.attachments.findForMessages(page.map((m) => m.id)),
+    ]);
+    return {
+      items: page.map((m, i) => ({
+        ...MessageDto.from(m, (m.senderId && names.get(m.senderId)) || null, files.get(m.id) ?? []),
+        chatReference: String(raw[i]?.chat_reference ?? ''),
+        chatSubject: String(raw[i]?.chat_subject ?? ''),
+      })),
+      nextCursor: entities.length > limit ? page[page.length - 1].id : null,
     };
   }
 

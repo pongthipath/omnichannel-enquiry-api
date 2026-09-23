@@ -108,3 +108,22 @@ export class SendMessageResultDto {
   @ApiProperty({ description: 'false = idempotent replay of an already stored message' })
   created: boolean;
 }
+
+export class ListCustomerMessagesQuery extends ListMessagesQuery {
+  @ApiPropertyOptional({ description: 'text contained in the message — needs CHAT_SEARCH_MESSAGES' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+}
+
+/** A message seen from the customer's side: which enquiry it belongs to matters here. */
+export class CustomerMessageDto extends MessageDto {
+  @ApiProperty({ example: 'ENQ-2026-000123' }) chatReference: string;
+  @ApiProperty({ example: 'ของยังไม่ถึง' }) chatSubject: string;
+}
+
+export class CustomerMessagePageDto {
+  @ApiProperty({ type: [CustomerMessageDto] }) items: CustomerMessageDto[];
+  @ApiPropertyOptional({ nullable: true }) nextCursor: string | null;
+}

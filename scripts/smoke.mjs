@@ -164,9 +164,122 @@ async function main() {
   check('dashboard summary has totals + 6 statuses', dash.status === 200 && dash.data?.byStatus?.length === 6);
   const customers = await call('GET', '/customers?q=bistro', manager);
   check('customers page search', customers.data?.items?.[0]?.code === 'CUS-00128' && customers.data.items[0].openEnquiries >= 1);
+  const bistroId = customers.data.items[0].id;
   await call('DELETE', `/tags/${tag.data.id}`, admin);
   const afterDelete = await call('GET', `/conversations/${id}`, manager);
   check('deleting a tag removes it from enquiries', afterDelete.data?.tags?.length === 0);
+
+
+  // ----- attachments, inbound channels, SLA settings, orders, customer chat (design §11, §12, §17, A5/A6/A9) -----
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const form = new FormData();
+  form.append('file', new Blob([png], { type: 'image/png' }), 'smoke.png');
+  const uploadRes = await fetch(`${API}/attachments`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${supervisor}` },
+    body: form,
+  });
+  const uploaded = await uploadRes.json().catch(() => null);
+  check('staff uploads an image → stored', uploadRes.status === 201 && uploaded?.status === 'STORED');
+
+  const withFile = await call('POST', `/conversations/${id}/messages`, supervisor, {
+    clientMessageId: randomUUID(),
+    body: '',
+    attachmentIds: [uploaded.id],
+  });
+  check('message with only an attachment is allowed, typed IMAGE',
+    withFile.status === 201 && withFile.data?.message?.messageType === 'IMAGE' && withFile.data.message.attachments.length === 1);
+  const reuse = await call('POST', `/conversations/${id}/messages`, supervisor, {
+    clientMessageId: randomUUID(),
+    body: 'ส่งซ้ำ',
+    attachmentIds: [uploaded.id],
+  });
+  check('an attachment cannot be sent twice → 400', reuse.status === 400);
+  const fileRes = await fetch(`${API}/attachments/${uploaded.id}/file`, {
+    headers: { Authorization: `Bearer ${supervisor}` },
+  });
+  check('attachment downloads through the API', fileRes.status === 200);
+  const ownerFile = await fetch(`${API}/attachments/${uploaded.id}/file`, {
+    headers: { Authorization: `Bearer ${customer}` },
+  });
+  check('the chat’s own customer can open it too', ownerFile.status === 200);
+  const otherCustomer = await login('purchasing@siamriverside.test', 'customer');
+  const strangerFile = await fetch(`${API}/attachments/${uploaded.id}/file`, {
+    headers: { Authorization: `Bearer ${otherCustomer}` },
+  });
+  check('a customer outside the chat gets 404, not 403', strangerFile.status === 404);
+
+  const unsigned = await call('POST', '/webhooks/line', null, { events: [] });
+  check('a webhook without a signature is rejected → 401', unsigned.status === 401);
+  const lineUser = `U-smoke-${Date.now()}`;
+  const sim = await call('POST', '/webhooks/simulate', admin, {
+    channel: 'LINE',
+    externalUserId: lineUser,
+    displayName: 'สมชาย (smoke)',
+    text: 'ของยังไม่ถึงเลยครับ',
+  });
+  check('simulator accepts a message from an unknown LINE user', sim.status === 201 && sim.data?.accepted === 1);
+  const simChatId = sim.data.chatIds[0];
+  const simAgain = await call('POST', '/webhooks/simulate', admin, {
+    channel: 'LINE',
+    externalUserId: lineUser,
+    text: 'ยังรออยู่นะครับ',
+  });
+  check('the same person joins their open enquiry instead of starting a new one',
+    simAgain.data?.chatIds?.[0] === simChatId);
+  const simAgent = await call('POST', '/webhooks/simulate', csAgent, { channel: 'LINE', externalUserId: 'x', text: 'y' });
+  check('an agent without SIMULATOR_PAGE_USE → 403', simAgent.status === 403);
+
+  const simChat = await call('GET', `/conversations/${simChatId}`, admin);
+  const placeholderId = simChat.data.customerId;
+  const placeholder = await call('GET', `/customers/${placeholderId}`, admin);
+  check('the unknown sender became an unverified customer', placeholder.data?.isPlaceholder === true);
+  const merged = await call('POST', `/customers/${placeholderId}/merge`, admin, { targetCustomerId: bistroId });
+  check('merging folds them into the real customer', merged.status === 201 && merged.data?.id === bistroId);
+  const afterMerge = await call('GET', `/conversations/${simChatId}`, admin);
+  check('their enquiry moved across with them', afterMerge.data?.customerId === bistroId);
+  const mergeAgain = await call('POST', `/customers/${bistroId}/merge`, admin, { targetCustomerId: bistroId });
+  check('merging a real customer into itself → 409', mergeAgain.status === 409);
+
+  const orders = await call('GET', `/customers/${bistroId}/orders`, supervisor);
+  check('customer orders are listed newest first', orders.status === 200 && orders.data?.length >= 1);
+  const ownOrders = await call('GET', `/customers/${bistroId}/orders`, customer);
+  check('the customer sees their own orders', ownOrders.status === 200 && ownOrders.data?.length === orders.data.length);
+  const otherOrders = await call('GET', `/customers/${placeholderId}/orders`, customer);
+  check('and nobody else’s', otherOrders.status === 403);
+
+  const customerChat = await call('GET', `/customers/${bistroId}/messages?limit=5`, supervisor);
+  check('every message of one customer, across enquiries, carries its enquiry reference',
+    customerChat.status === 200 && customerChat.data?.items?.[0]?.chatReference?.startsWith('ENQ-'));
+  const searched = await call('GET', `/customers/${bistroId}/messages?q=${encodeURIComponent('ของยังไม่ถึง')}`, supervisor);
+  check('searching the text finds it', searched.status === 200 && searched.data.items.length >= 1);
+  const agentSearch = await call('GET', `/customers/${bistroId}/messages?q=x`, csAgent);
+  check('an agent without CHAT_SEARCH_MESSAGES may read but not search → 403', agentSearch.status === 403);
+
+  const policies = await call('GET', '/sla-policies', manager);
+  check('SLA policies are listed', policies.status === 200 && policies.data?.length >= 1);
+  // the scope of a rule is a fixed pair of enums, so a re-run reuses the rule the last run left
+  const scope = { enquiryType: 'GENERAL', priority: 'LOW' };
+  const created = await call('POST', '/sla-policies', manager, { ...scope, targetMinutes: 720 });
+  const policy =
+    created.status === 201
+      ? created.data
+      : (await call('GET', '/sla-policies', manager)).data.find(
+          (p) => p.enquiryType === scope.enquiryType && p.priority === scope.priority,
+        );
+  check('manager adds an SLA rule', Boolean(policy?.id) && policy.targetMinutes === 720);
+  const dupPolicy = await call('POST', '/sla-policies', manager, { ...scope, targetMinutes: 60 });
+  check('the same scope twice → 409 sla.duplicateRule', dupPolicy.status === 409);
+  const tooShort = await call('POST', '/sla-policies', manager, { enquiryType: 'PRICING', targetMinutes: 1 });
+  check('a target under 5 minutes is rejected', tooShort.status === 400);
+  const offPolicy = await call('PATCH', `/sla-policies/${policy.id}`, manager, { isActive: false });
+  check('a rule can be switched off', offPolicy.data?.isActive === false);
+  await call('PATCH', `/sla-policies/${policy.id}`, manager, { isActive: true, targetMinutes: 720 });
+  const agentPolicy = await call('POST', '/sla-policies', csAgent, { targetMinutes: 30 });
+  check('an agent cannot change SLA rules → 403', agentPolicy.status === 403);
 
   socket.close();
   console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

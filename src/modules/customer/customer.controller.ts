@@ -71,10 +71,18 @@ export class CustomerController {
   }
 
   @Get(':id/orders')
-  @RequirePermission(Permission.CUSTOMER_PANEL_ORDERS_VIEW)
-  @ApiOperation({ summary: 'Recent orders of the customer (Customer 360 panel)' })
+  @ApiOperation({
+    summary: 'Recent orders — staff with ORDERS_VIEW, or the customer looking at their own',
+  })
   @ApiOkResponse({ type: [CustomerOrderDto] })
-  orders(@Param('id', ParseUUIDPipe) id: string): Promise<CustomerOrderDto[]> {
+  orders(
+    @CurrentActor() actor: Actor,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CustomerOrderDto[]> {
+    const allowed = isStaff(actor)
+      ? actor.can(Permission.CUSTOMER_PANEL_ORDERS_VIEW)
+      : actor.id === id;
+    if (!allowed) throw new ForbiddenException('auth.forbidden');
     return this.customers.orders(id);
   }
 

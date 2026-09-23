@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, Repository, SelectQueryBuilder } from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { Channel } from '../../../common/constants/enums';
+import { Chat } from '../enquiry/chat.entity';
 import { ChatMessage } from './chat-message.entity';
 
 @Injectable()
@@ -59,5 +60,35 @@ export class ChatMessageRepository {
       );
     }
     return qb.getMany();
+  }
+  /**
+   * Every message this customer exchanged, across all their enquiries (design A9/A10). Only chats the
+   * staff member may see are included — the scope is applied to the chat, exactly as in the inbox.
+   * `q` narrows to messages containing the text (A10).
+   */
+  listForCustomer(
+    customerId: string,
+    opts: { includeInternal: boolean; q?: string; beforeId?: string; limit: number },
+    applyScope: (qb: SelectQueryBuilder<ChatMessage>) => void,
+  ) {
+    const qb = this.repo
+      .createQueryBuilder('m')
+      .innerJoin(Chat, 'chat', 'chat.id = m.chat_id')
+      .addSelect(['chat.reference AS chat_reference', 'chat.subject AS chat_subject'])
+      .where('chat.customerId = :customerId', { customerId })
+      .andWhere("m.messageType <> 'EVENT'")
+      .orderBy('m.createdAt', 'DESC')
+      .addOrderBy('m.id', 'DESC')
+      .take(opts.limit);
+    applyScope(qb);
+    if (!opts.includeInternal) qb.andWhere('m.isInternal = false');
+    if (opts.q) qb.andWhere('m.body ILIKE :q', { q: `%${opts.q}%` });
+    if (opts.beforeId) {
+      qb.andWhere(
+        '(m.createdAt, m.id) < (SELECT c.created_at, c.id FROM chat_message c WHERE c.id = :beforeId)',
+        { beforeId: opts.beforeId },
+      );
+    }
+    return qb.getRawAndEntities();
   }
 }

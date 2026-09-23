@@ -14,6 +14,7 @@ import { EnquiryController } from './enquiry/enquiry.controller';
 import { EnquiryService } from './enquiry/enquiry.service';
 import { ChatMessage } from './message/chat-message.entity';
 import { ChatMessageRepository } from './message/chat-message.repository';
+import { CustomerMessageController } from './message/customer-message.controller';
 import { MessageController } from './message/message.controller';
 import { MessageService } from './message/message.service';
 import { SlaPolicy } from './sla/sla-policy.entity';
@@ -32,7 +33,7 @@ import { TagService } from './tag/tag.service';
     StaffModule,
     CustomerModule,
   ],
-  controllers: [EnquiryController, MessageController, TagController, DashboardController, AttachmentController, SlaController],
+  controllers: [EnquiryController, MessageController, CustomerMessageController, TagController, DashboardController, AttachmentController, SlaController],
   providers: [
     ChatRepository,
     ChatMessageRepository,
