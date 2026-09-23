@@ -198,19 +198,17 @@ async function main() {
     attachmentIds: [uploaded.id],
   });
   check('an attachment cannot be sent twice → 400', reuse.status === 400);
-  const fileRes = await fetch(`${API}/attachments/${uploaded.id}/file`, {
+  // the link that came with the message is signed, so an <img> can load it with no header at all
+  const signedUrl = withFile.data.message.attachments[0].url;
+  check('the message hands out a signed link', /^\/attachments\/[0-9a-f-]+\/file\?t=\d+\./.test(signedUrl));
+  const fileRes = await fetch(`${API}${signedUrl}`);
+  check('the signed link downloads the file without a token', fileRes.status === 200);
+  const noToken = await fetch(`${API}/attachments/${uploaded.id}/file`, {
     headers: { Authorization: `Bearer ${supervisor}` },
   });
-  check('attachment downloads through the API', fileRes.status === 200);
-  const ownerFile = await fetch(`${API}/attachments/${uploaded.id}/file`, {
-    headers: { Authorization: `Bearer ${customer}` },
-  });
-  check('the chat’s own customer can open it too', ownerFile.status === 200);
-  const otherCustomer = await login('purchasing@siamriverside.test', 'customer');
-  const strangerFile = await fetch(`${API}/attachments/${uploaded.id}/file`, {
-    headers: { Authorization: `Bearer ${otherCustomer}` },
-  });
-  check('a customer outside the chat gets 404, not 403', strangerFile.status === 404);
+  check('the same url without a signature is refused, even for staff', noToken.status === 401);
+  const tampered = await fetch(`${API}${signedUrl.slice(0, -2)}xy`);
+  check('a tampered signature is refused', tampered.status === 401);
 
   const unsigned = await call('POST', '/webhooks/line', null, { events: [] });
   check('a webhook without a signature is rejected → 401', unsigned.status === 401);

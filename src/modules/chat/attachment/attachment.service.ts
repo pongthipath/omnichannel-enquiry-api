@@ -92,6 +92,13 @@ export class AttachmentService {
     return this.attachments.findByIds(ids);
   }
 
+  /** A signed link already proves the server handed this file out; no actor to check. */
+  async getById(id: string): Promise<ChatMessageAttachment> {
+    const attachment = await this.attachments.findById(id);
+    if (!attachment) throw new NotFoundException('attachment.notFound');
+    return attachment;
+  }
+
   /**
    * A file may be read by anyone who may read its chat; a file not on a message yet only by the
    * person who uploaded it. 404 (not 403) so ids can't be probed.

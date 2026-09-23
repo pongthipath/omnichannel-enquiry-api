@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { signAttachmentPath } from './attachment-url.util';
 import { AttachmentKind, AttachmentStatus, ChatMessageAttachment } from './chat-message-attachment.entity';
 
 export class AttachmentDto {
@@ -8,8 +9,8 @@ export class AttachmentDto {
   @ApiProperty({ example: 'image/jpeg' }) mimeType: string;
   @ApiProperty() sizeBytes: number;
   @ApiProperty({
-    example: '/api/v1/attachments/1f…/file',
-    description: 'always served through the API, so the bucket stays private',
+    example: '/attachments/1f…/file?t=1790216000000.aGVsbG8',
+    description: 'served through the API and signed, so an <img> can load it without a header',
   })
   url: string;
   @ApiProperty({ enum: AttachmentStatus, description: 'PENDING = still on the channel, being mirrored' })
@@ -23,7 +24,7 @@ export class AttachmentDto {
       fileName: a.fileName,
       mimeType: a.mimeType,
       sizeBytes: a.sizeBytes,
-      url: `/attachments/${a.id}/file`,
+      url: signAttachmentPath(a.id),
       status: a.status,
       chatMessageId: a.chatMessageId,
     };
