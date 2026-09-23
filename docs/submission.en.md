@@ -20,6 +20,7 @@ Submission — 2-Day Practical Technical Assessment (Senior Mobile Developer)
 - **13 tables, 13 foreign keys**, named parent-first (`chat` → `chat_message` → `chat_message_attachment`) so related tables sit together when you open pgAdmin.
 - **Offline is an outbox on SQLite.** Anything typed without a connection survives a force-quit and goes out by itself when the network returns. Duplicates are prevented by a device-generated idempotency key plus a unique constraint in the database.
 - **Realtime is Socket.IO with the Redis adapter**, and every event carries the full record so screens never have to fetch again.
+- **One codebase, two shapes.** In a browser, staff get the sidebar console with its three panes. On iOS and Android both apps are real phone apps: bottom tabs for the sections, and everything below a section pushed on top with a back button.
 - Everything described here runs and has been checked. A 73-step smoke test walks from sign-in through to managing the product catalogue.
 
 ---
@@ -164,7 +165,7 @@ flowchart LR
 
 **Why it looks like this**
 
-Neither `api` nor `worker` keeps anything in memory, so adding an instance is all it takes to scale out. Socket.IO reaches across instances through the Redis adapter, and the scheduled work (the SLA sweep) takes a Redis lock so several workers never do the same pass twice.
+Neither `api` nor `worker` keeps anything in memory, so adding an instance is all it takes to scale out. Socket.IO reaches across instances through the Redis adapter. The scheduled work takes no lock of its own and lets the database decide instead: the SLA sweep is a single `UPDATE … WHERE is_sla_breached = false … RETURNING`, so a row can only be claimed by one worker and no number of replicas will send the same alert twice. The attachment-mirror job is still a plain `find()` — run several replicas and they will pick up the same rows and do the work twice over. Nothing ends up wrong, because an object's key is derived from the attachment id, but it is wasted effort, and before this is deployed that job should claim its rows the same way.
 
 The expensive work — copying images out of a channel into our own bucket, walking enquiries whose SLA target has passed — is deliberately off the request path, so no user waits for it.
 
@@ -217,6 +218,8 @@ Sign in and out, a profile page showing contact details and past orders, creatin
 
 The home screen leads with four shortcuts — damaged goods, track an order, price or quotation, tax invoice — because those are the four things a restaurant customer asks about most. Each opens the form with the type already chosen.
 
+**On a phone this is three bottom tabs** — home, report, my details — and a shortcut opens the form as **its own page** with a back button rather than a dialog. A dialog covering a 390px screen leaves nowhere to look once the keyboard is up, and no way to see what you already filled in. Opening an enquiry pushes a page the same way, and the tabs step out of the way while you are inside one. The browser still gets the dialog: same form, different shell, both built on `enquiry-draft.tsx` so the two can never drift apart.
+
 ### §5 Enquiry information
 Everything the brief lists: reference (`ENQ-2026-000123`, from a database sequence), customer, channel, type, product, subject, description, priority, department and assignee, status, created and last-updated timestamps, and the SLA figures.
 
@@ -233,6 +236,14 @@ The six statuses from the brief: `OPEN → ASSIGNED → IN_PROGRESS → WAITING_
 Sign-in, dashboard, search across enquiries and customers, filters by status, type, priority, assignee and date, enquiry detail, replying, assigning and reassigning, changing status, escalating to another department, viewing attachments, and customer history.
 
 The console is three panes — enquiry list, conversation, context panel — as designed in `ux-ui.md`. The right-hand panel has tabs for the customer, the details, internal notes, the customer's chat and the history.
+
+**On iOS and Android this is a separate app, not the console shrunk down.** Three panes side by side on a 390px screen is unreadable, so the phone gets its own shell:
+
+- **Four bottom tabs** — inbox (badged with the number of enquiries still open), dashboard, customers, and "me". The "me" tab holds every settings page and the sign-out, which on the web live in the left menu.
+- **Anything below a tab is a pushed page** — an inbox row opens the conversation, the conversation opens the customer 360, a topic in the "me" tab opens that settings page. Each has a top bar with a back button, Android's own back gesture works, and the tabs hide while you are inside.
+- **Tables that need width were reworked by how often they are opened.** Customers is a main tab, so its six-column table became one card per shop (name, code, contact and phone, linked channels, salesperson, open enquiries, last contact) that opens the 360 page. The admin screens opened once in a while — SLA, product management, tags, staff — keep their table and scroll sideways instead, so no column lands on top of another.
+
+The split is on `Platform.OS`, not on window width: narrowing a browser window does not make it a phone, and somebody working with the window at half screen still wants the console they know rather than a tab bar.
 
 **Internal notes are separate from ordinary messages** via `is_internal` on `chat_message`. A customer cannot reach them — not in the message list, which filters them out in the query, and not through an attachment link.
 
@@ -437,7 +448,7 @@ Beyond that, the whole flow was walked by hand on a real Android emulator — si
 **Before going live**
 
 1. **Observability first** — structured logs with a correlation id, metrics (p95 from webhook to screen, outbox depth, SLA breach rate), tracing across services, and an alert when the sync queue stops draining.
-2. **Move background work onto a real queue.** The worker currently uses intervals with a Redis lock, which is fine for a prototype; production wants BullMQ or full RabbitMQ with a dead-letter queue and somewhere to see stuck jobs.
+2. **Move background work onto a real queue.** The worker is a `setInterval` whose de-duplication is a condition inside its own `UPDATE`, which is fine for a prototype; production wants BullMQ or full RabbitMQ with a dead-letter queue and somewhere to see stuck jobs.
 3. **Rate limiting at the edge**, particularly on `/auth/login` and the webhooks. Today there is only account lockout.
 4. **Rotate secrets and move them into a secret manager**; they are in env files now.
 5. **Add a read replica and PgBouncer** once read traffic grows — the dashboard and search are the first things that should move.

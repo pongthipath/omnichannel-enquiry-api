@@ -4,3 +4,6 @@ coverage/
 .env
 *.log
 .DS_Store
+
+# print-ready HTML — an intermediate step on the way to the PDFs, rebuilt by npm run docs:pdf
+docs/*.html
