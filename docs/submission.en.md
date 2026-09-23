@@ -4,9 +4,8 @@ Submission — 2-Day Practical Technical Assessment (Senior Mobile Developer)
 
 | | |
 |---|---|
-| Repository | `<GIT_URL>` |
-| Backend | `omnichannel-enquiry-api` — NestJS 11 · TypeORM · PostgreSQL 16 · Redis · MinIO (S3) · RabbitMQ · Socket.IO |
-| App | `omnichannel-enquiry-app` — Expo SDK 57 (one codebase for iOS, Android and Web) |
+| Backend | [`omnichannel-enquiry-api`](https://github.com/pongthipath/omnichannel-enquiry-api) — NestJS 11 · TypeORM · PostgreSQL 16 · Redis · MinIO (S3) · RabbitMQ · Socket.IO |
+| App | [`omnichannel-enquiry-app`](https://github.com/pongthipath/omnichannel-enquiry-app) — Expo SDK 57 (one codebase for iOS, Android and Web) |
 | Infra | `omnichannel-enquiry-infra` — Terraform (not deployed; included to show the intended shape) |
 | Full design docs | [`docs/design.md`](design.md) · UX [`docs/ux-ui.md`](ux-ui.md) · scale assumptions [`docs/scale-assumptions.md`](scale-assumptions.md) |
 

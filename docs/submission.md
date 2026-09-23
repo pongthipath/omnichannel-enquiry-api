@@ -4,9 +4,8 @@
 
 | | |
 |---|---|
-| Repository | `<GIT_URL>` |
-| Backend | `omnichannel-enquiry-api` — NestJS 11 · TypeORM · PostgreSQL 16 · Redis · MinIO (S3) · RabbitMQ · Socket.IO |
-| แอป | `omnichannel-enquiry-app` — Expo SDK 57 (โค้ดชุดเดียว รันได้ทั้ง iOS / Android / Web) |
+| Backend | [`omnichannel-enquiry-api`](https://github.com/pongthipath/omnichannel-enquiry-api) — NestJS 11 · TypeORM · PostgreSQL 16 · Redis · MinIO (S3) · RabbitMQ · Socket.IO |
+| แอป | [`omnichannel-enquiry-app`](https://github.com/pongthipath/omnichannel-enquiry-app) — Expo SDK 57 (โค้ดชุดเดียว รันได้ทั้ง iOS / Android / Web) |
 | Infra | `omnichannel-enquiry-infra` — Terraform (ยังไม่ได้ deploy จริง ใส่มาให้ดูแนวทาง) |
 | เอกสารออกแบบเต็ม | [`docs/design.md`](design.md) · UX [`docs/ux-ui.md`](ux-ui.md) · สมมติฐาน scale [`docs/scale-assumptions.md`](scale-assumptions.md) |
 
