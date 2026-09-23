@@ -10,6 +10,8 @@
 | Infra | `omnichannel-enquiry-infra` — Terraform (ยังไม่ได้ deploy จริง ใส่มาให้ดูแนวทาง) |
 | เอกสารออกแบบเต็ม | [`docs/design.md`](design.md) · UX [`docs/ux-ui.md`](ux-ui.md) · สมมติฐาน scale [`docs/scale-assumptions.md`](scale-assumptions.md) |
 
+> English version of this document: [`docs/submission.en.md`](submission.en.md)
+
 ---
 
 ## 1. อ่านตรงนี้ก่อนถ้ามีเวลา 2 นาที
