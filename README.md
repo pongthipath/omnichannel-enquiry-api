@@ -6,10 +6,12 @@ Backend for the **Omnichannel Customer Enquiry** system — NestJS modular monol
 - System design: [`docs/design.md`](docs/design.md) (architecture, ER, API contract, offline sync & idempotency, omnichannel, SLA, permissions, scale & load balancing)
 - UX/UI: [`docs/ux-ui.md`](docs/ux-ui.md) · Scale assumptions: [`docs/scale-assumptions.md`](docs/scale-assumptions.md)
 
-> **Status:** core API working locally — auth (customer/staff, lockout, rotating refresh tokens), permission bitmask guard,
-> enquiries (idempotent create, list by scope, assign, 6-step status rules, escalate, auto-reopen), messages, offline
-> batch sync, product trigram search, Socket.IO realtime with Redis adapter. Verified end-to-end by `npm run smoke` (27 checks).
-> Not yet: attachments/S3, webhooks + channel simulator, tags, customer chat list, dashboard, SLA breach job (see `src/modules/README.md`).
+> **Status:** ครบทุกหัวข้อของโจทย์และตรวจแล้ว — auth (ล็อกบัญชี, refresh token หมุนพร้อมตรวจการใช้ซ้ำ), สิทธิ์แบบ bitmask,
+> เรื่องแจ้ง (สร้างแบบ idempotent, กรองตาม scope, มอบหมาย, 6 สถานะ, ส่งต่อแผนก, เปิดใหม่อัตโนมัติ), ข้อความ, offline batch sync,
+> ค้นสินค้าด้วย trigram, ไฟล์แนบ + S3, webhook 3 ช่องทาง + หน้าจำลอง, แท็ก, แชทลูกค้าข้ามเรื่อง, แดชบอร์ด, SLA + งานเช็คเบื้องหลัง,
+> Socket.IO realtime ข้าม instance ด้วย Redis adapter · `npm run smoke` 61 ข้อ, `npm test` 65 ข้อ
+>
+> เอกสารส่งมอบฉบับเต็ม (วิธีรัน, สถาปัตยกรรม, ER, เหตุผลการตัดสินใจ, ข้อจำกัด): [`docs/submission.md`](docs/submission.md)
 
 ## Run locally (recommended for development)
 
