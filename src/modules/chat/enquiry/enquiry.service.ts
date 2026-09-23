@@ -178,10 +178,15 @@ export class EnquiryService {
     await this.tagService.assertApplicableToEnquiry(tagIds);
     const unique = [...new Set(tagIds)];
 
-    // tags are not a timeline event (no message row); mutate still emits chat.updated with the new tags
+    // recorded in the history as an internal event: which tags were added / removed (by name)
     return this.mutate(staffActor, id, async (chat, m) => {
+      const before = (await this.tags.findForChats([chat.id])).get(chat.id) ?? [];
+      const after = await this.tags.findByIds(unique);
+      const added = after.filter((t) => !before.some((b) => b.id === t.id)).map((t) => t.name);
+      const removed = before.filter((b) => !unique.includes(b.id)).map((t) => t.name);
+      if (!added.length && !removed.length) return null;
       await this.tags.replaceForChat(m, chat.id, unique);
-      return null;
+      return { kind: ChatEventKind.TAGS_CHANGED, data: { added, removed }, internal: true };
     });
   }
 

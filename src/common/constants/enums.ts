@@ -61,4 +61,6 @@ export enum ChatEventKind {
   REOPENED = 'REOPENED',
   /** details edited in the Context Panel (type, priority, product, subject) */
   UPDATED = 'UPDATED',
+  /** tags added / removed (names kept, so the history reads well after a tag is renamed or deleted) */
+  TAGS_CHANGED = 'TAGS_CHANGED',
 }
