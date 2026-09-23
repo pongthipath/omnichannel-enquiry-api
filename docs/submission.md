@@ -19,7 +19,7 @@
 - **DB 13 ตาราง 13 FK** ตั้งชื่อเรียงจากแม่ไปลูก (`chat` → `chat_message` → `chat_message_attachment`) เปิด pgAdmin แล้วตารางที่เกี่ยวกันอยู่ติดกันเอง
 - **Offline ใช้ outbox บน SQLite** สิ่งที่พิมพ์ตอนไม่มีเน็ตอยู่รอดแม้ปิดแอปทิ้ง แล้วส่งเองเมื่อเน็ตกลับมา กันซ้ำด้วย idempotency key ที่สร้างจากเครื่อง + unique constraint ใน DB
 - **Realtime ใช้ Socket.IO + Redis adapter** ส่งข้อมูลเต็มไปกับ event เลย หน้าจอไม่ต้องยิง API ซ้ำ
-- ทุกอย่างในเอกสารนี้รันจริงและตรวจแล้ว มี smoke test 61 ข้อไล่ตั้งแต่ login จนถึง SLA
+- ทุกอย่างในเอกสารนี้รันจริงและตรวจแล้ว มี smoke test 73 ข้อไล่ตั้งแต่ login จนถึงการจัดการสินค้า
 
 ---
 
@@ -40,19 +40,20 @@ cp .env.example .env
 docker compose up -d postgres redis rabbitmq minio minio-init mailpit
 
 npm run migration:run
-npm run seed          # แผนก, role, พนักงาน, ลูกค้า, สินค้า 30 รายการ, กฎ SLA — รันซ้ำได้ไม่พัง
-npm run seed:demo     # เรื่องตัวอย่าง 10 เรื่อง ครบทุกสถานะ พร้อมบทสนทนาและคำสั่งซื้อ
-
 npm run start:dev     # API ขึ้นที่ http://localhost:4000
 npm run start:worker:dev   # อีกเทอร์มินัล — งานเบื้องหลัง (คัดลอกรูปเข้า S3, เช็ค SLA เกินกำหนด)
 ```
+
+ตอน `NODE_ENV=development` ระบบจะ **ใส่ข้อมูลตัวอย่างให้เองทุกครั้งที่ start** — แผนก บทบาท พนักงาน ลูกค้า สินค้า 30 รายการ กฎ SLA และเรื่องตัวอย่าง 10 เรื่องพร้อมบทสนทนาและคำสั่งซื้อ ไม่ต้องจำคำสั่ง seed ทั้งสอง seed เขียนแบบ upsert ตาม natural key เปิดซ้ำกี่รอบข้อมูลก็ไม่บวม ถ้าอยากทดสอบฐานข้อมูลเปล่าตั้ง `SEED_ON_BOOT=false` และถ้าอยากสั่งเองก็ยังมี `npm run seed` กับ `npm run seed:demo` เหมือนเดิม
+
+**Swagger เปิดเฉพาะตอนที่ไม่ใช่ production** — ถ้า `NODE_ENV=production` จะไม่ผูก `/api/docs` เลย (ตอบ 404) เพราะมันคือแผนที่ของ API ทั้งระบบ ไม่ควรเปิดทิ้งไว้หน้าอินเทอร์เน็ต และ seed ตอน boot ก็ไม่ทำงานใน production เช่นกัน
 
 ถ้าอยากรันทุกอย่างใน Docker รวด: `docker compose up -d` (ได้ Traefik เป็น load balancer, job `migrate`, `api`, `worker` มาด้วย) แล้ว `docker compose exec api npm run seed`
 ทดสอบ scale แนวนอน: `docker compose up -d --scale api=3 --scale worker=2`
 
 | URL | คืออะไร |
 |---|---|
-| http://localhost:4000/api/docs | Swagger — เอกสาร API ทั้งหมด ลองยิงได้จากหน้านี้เลย |
+| http://localhost:4000/api/docs | Swagger — เอกสาร API ทั้งหมด ลองยิงได้จากหน้านี้เลย (ปิดเองใน production) |
 | http://localhost:4000/api/health/ready | readiness ที่ load balancer ใช้ |
 | http://localhost:9001 | MinIO console (S3 ในเครื่อง) |
 | http://localhost:8025 | Mailpit — อีเมลที่ระบบส่งตอน dev |
@@ -102,7 +103,7 @@ cp .env.example .env
 
 ```bash
 cd omnichannel-enquiry-api
-npm run smoke     # 61 ข้อ ไล่ตั้งแต่ login, scope, offline sync, ไฟล์แนบ, webhook, SLA
+npm run smoke     # 73 ข้อ ไล่ตั้งแต่ login, scope, offline sync, ไฟล์แนบ, webhook, SLA, สินค้า
 npm test          # unit test 65 ข้อ
 
 cd ../omnichannel-enquiry-app
@@ -240,6 +241,8 @@ erDiagram
 ### §9 ค้นหาสินค้า
 สินค้า mock 30 รายการ มีรหัส ชื่อ หมวด แบรนด์ ขนาดบรรจุ หน่วย ค้นด้วย **pg_trgm** ซึ่งพิมพ์ผิดนิดหน่อยก็ยังเจอ (เช่น "mozarela" หา Mozzarella เจอ) เลือกวิธีนี้เพราะติดตั้ง full-text search แยกไม่คุ้มกับข้อมูลระดับนี้ และ trigram รองรับภาษาไทยที่ไม่มีการเว้นวรรคได้ดีกว่า
 
+โจทย์ขอแค่ข้อมูล mock กับการค้นหา แต่หน้า master data อื่นทุกหน้าจัดการได้หมด สินค้าจึงเป็นหน้าเดียวที่อ่านอย่างเดียว เลยเพิ่มหน้า **Settings › จัดการสินค้า** ให้ครบ (สิทธิ์ `SETTINGS_PRODUCT_MANAGE`) เพิ่มและแก้ไขได้ และ **ปิดใช้งานแทนการลบ** เหมือนแผนก — สินค้าที่เลิกขายจะหายจากตัวเลือก แต่เรื่องเก่าที่อ้างถึงมันยังแสดงได้ปกติ หน้าจัดการบอกด้วยว่าสินค้าแต่ละตัวถูกอ้างถึงในกี่เรื่อง จะได้ไม่เผลอปิดตัวที่ทีมใช้อยู่
+
 ### §10 บทสนทนาและ realtime — เลือก Socket.IO เพราะอะไร
 ทุกเรื่องมี thread ของตัวเอง ข้อความมี timestamp และสถานะการส่ง — ฝั่ง server เก็บ `delivered_at` กับ `read_at` ส่วนสถานะ "กำลังส่ง" เป็นของฝั่งแอประหว่างที่ยังไม่ได้รับคำตอบกลับมา
 
@@ -367,7 +370,7 @@ React Native (ผ่าน Expo), TypeScript ทั้งระบบ, REST API,
 | ข้อความ | `GET /conversations/:id/messages` · `POST /conversations/:id/messages` · `POST /messages/sync` |
 | ไฟล์แนบ | `POST /attachments` · `GET /attachments/:id/file` |
 | ช่องทาง | `POST /webhooks/:channel` · `POST /webhooks/simulate` |
-| สินค้า | `GET /products` · `GET /products/:id` |
+| สินค้า | `GET /products` · `GET /products/:id` · `GET /settings/products` · `POST /products` · `PATCH /products/:id` |
 | แดชบอร์ด | `GET /dashboard/summary` |
 | ตั้งค่า | `GET/POST/PATCH /sla-policies` · `/tags` · `/departments` · `/roles` · `/staff` |
 | Health | `GET /api/health/live` · `GET /api/health/ready` |
@@ -409,7 +412,7 @@ React Native (ผ่าน Expo), TypeScript ทั้งระบบ, REST API,
 
 | ชุด | จำนวน | ครอบคลุม |
 |---|---|---|
-| `npm run smoke` (API) | 61 ข้อ | ไล่ตั้งแต่ login → scope การมองเห็น → มอบหมาย → กฎการเปลี่ยนสถานะ → เปิดเรื่องใหม่อัตโนมัติ → realtime → offline sync ตามโจทย์ข้อ 14 → ไฟล์แนบ → webhook → รวมลูกค้า → SLA |
+| `npm run smoke` (API) | 73 ข้อ | ไล่ตั้งแต่ login → scope การมองเห็น → มอบหมาย → กฎการเปลี่ยนสถานะ → เปิดเรื่องใหม่อัตโนมัติ → realtime → offline sync ตามโจทย์ข้อ 14 → ไฟล์แนบ → webhook → รวมลูกค้า → SLA → จัดการสินค้า |
 | `npm test` (API) | 65 ข้อ | นโยบายการมองเห็นแชท, กฎเปลี่ยนสถานะ, bitmask, การแปลงจำนวนเงิน, ลายเซ็น webhook, ลิงก์ไฟล์แนบ |
 | `npx jest` (แอป) | 17 ข้อ | sync engine (ลำดับการส่ง, retry, ของซ้ำ, ถูกฆ่ากลางทาง), formatter, bitmask |
 

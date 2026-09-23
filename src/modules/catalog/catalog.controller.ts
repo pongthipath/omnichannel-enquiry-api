@@ -1,68 +1,71 @@
-import { Controller, Get, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiProperty,
-  ApiPropertyOptional,
   ApiTags,
 } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
-import { Product } from './product.entity';
-import { ProductRepository } from './product.repository';
-
-export class SearchProductsQuery {
-  @ApiPropertyOptional({
-    example: 'เนยจืด',
-    description: 'code, name, brand or category — typos tolerated',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  q?: string;
-}
-
-export class ProductDto {
-  @ApiProperty({ format: 'uuid' }) id: string;
-  @ApiProperty({ example: 'BTR-FR-250' }) code: string;
-  @ApiProperty({ example: 'President เนยจืด 250g (French Butter)' }) name: string;
-  @ApiPropertyOptional({ nullable: true }) category: string | null;
-  @ApiPropertyOptional({ nullable: true }) brand: string | null;
-  @ApiPropertyOptional({ nullable: true }) packSize: string | null;
-  @ApiPropertyOptional({ nullable: true }) unit: string | null;
-
-  static from(p: Product): ProductDto {
-    return {
-      id: p.id,
-      code: p.code,
-      name: p.name,
-      category: p.category,
-      brand: p.brand,
-      packSize: p.packSize,
-      unit: p.unit,
-    };
-  }
-}
+import { RequirePermission } from '../../common/auth/auth.decorators';
+import { ApiErrorDto } from '../../common/dto/api-error.dto';
+import { Permission } from '../../common/permissions/permission.enum';
+import {
+  CreateProductDto,
+  ProductDto,
+  ProductSettingsDto,
+  SearchProductsQuery,
+  UpdateProductDto,
+} from './catalog.dto';
+import { CatalogService } from './catalog.service';
 
 @ApiTags('Products')
 @ApiBearerAuth()
-@Controller('products')
+@Controller()
 export class CatalogController {
-  constructor(private readonly products: ProductRepository) {}
+  constructor(private readonly catalog: CatalogService) {}
 
-  @Get()
-  @ApiOperation({ summary: 'Search products (customers and staff)' })
+  @Get('products')
+  @ApiOperation({ summary: 'Search products (customers and staff) — active products only' })
   @ApiOkResponse({ type: [ProductDto] })
-  async search(@Query() query: SearchProductsQuery): Promise<ProductDto[]> {
-    return (await this.products.search(query.q ?? '')).map(ProductDto.from);
+  search(@Query() query: SearchProductsQuery): Promise<ProductDto[]> {
+    return this.catalog.search(query.q ?? '');
   }
 
-  @Get(':id')
+  // before products/:id, or "settings" would be read as an id
+  @Get('settings/products')
+  @RequirePermission(Permission.SETTINGS_PRODUCT_MANAGE)
+  @ApiOperation({ summary: 'All products incl. inactive, with the number of enquiries about each' })
+  @ApiOkResponse({ type: [ProductSettingsDto] })
+  listForSettings(): Promise<ProductSettingsDto[]> {
+    return this.catalog.listForSettings();
+  }
+
+  @Post('products')
+  @RequirePermission(Permission.SETTINGS_PRODUCT_MANAGE)
+  @ApiOperation({ summary: 'Add a product to the catalogue' })
+  @ApiCreatedResponse({ type: ProductSettingsDto })
+  @ApiConflictResponse({ type: ApiErrorDto, description: 'product.duplicateCode' })
+  create(@Body() dto: CreateProductDto): Promise<ProductSettingsDto> {
+    return this.catalog.create(dto);
+  }
+
+  @Patch('products/:id')
+  @RequirePermission(Permission.SETTINGS_PRODUCT_MANAGE)
+  @ApiOperation({ summary: 'Edit a product, or switch it off so it leaves the pickers' })
+  @ApiOkResponse({ type: ProductSettingsDto })
+  @ApiConflictResponse({ type: ApiErrorDto, description: 'product.duplicateCode' })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateProductDto,
+  ): Promise<ProductSettingsDto> {
+    return this.catalog.update(id, dto);
+  }
+
+  @Get('products/:id')
   @ApiOperation({ summary: 'One product (enquiry detail panel)' })
   @ApiOkResponse({ type: ProductDto })
-  async getOne(@Param('id', ParseUUIDPipe) id: string): Promise<ProductDto> {
-    const product = await this.products.findById(id);
-    if (!product) throw new NotFoundException('product.notFound');
-    return ProductDto.from(product);
+  getOne(@Param('id', ParseUUIDPipe) id: string): Promise<ProductDto> {
+    return this.catalog.getOne(id);
   }
 }

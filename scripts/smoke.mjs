@@ -279,6 +279,51 @@ async function main() {
   const agentPolicy = await call('POST', '/sla-policies', csAgent, { targetMinutes: 30 });
   check('an agent cannot change SLA rules → 403', agentPolicy.status === 403);
 
+  // ----- managing the catalogue (Settings › Products) -----
+  // a product cannot be deleted by design, so a re-run reuses the one the last run left behind
+  const productCode = 'SMOKE-BRIE-200';
+  const body = {
+    code: productCode.toLowerCase(),
+    name: 'Smoke Brie de Meaux 200g',
+    category: 'Cheese',
+    brand: 'Ile de France',
+    packSize: '200g',
+    unit: 'ชิ้น',
+  };
+  const newProduct = await call('POST', '/products', admin, body);
+  const product =
+    newProduct.status === 201
+      ? newProduct.data
+      : (await call('GET', '/settings/products', admin)).data.find((p) => p.code === productCode);
+  check('admin adds a product, code stored upper-case', product?.code === productCode);
+  const productId = product.id;
+  // a previous run may have left it switched off
+  await call('PATCH', `/products/${productId}`, admin, { isActive: true, brand: body.brand });
+
+  const dupProduct = await call('POST', '/products', admin, { code: productCode, name: 'same code' });
+  check('the same product code twice → 409 product.duplicateCode', dupProduct.status === 409);
+
+  const foundNew = await call('GET', `/products?q=${encodeURIComponent('Brie de Meaux')}`, csAgent);
+  check('a new product is searchable right away', foundNew.data?.some((p) => p.id === productId));
+  const productTypo = await call('GET', `/products?q=${encodeURIComponent('bri de mo')}`, csAgent);
+  check('and still found when the name is mistyped', productTypo.data?.some((p) => p.id === productId));
+
+  const renamed = await call('PATCH', `/products/${productId}`, admin, { brand: 'Président' });
+  check('a product can be edited', renamed.data?.brand === 'Président');
+
+  const deactivated = await call('PATCH', `/products/${productId}`, admin, { isActive: false });
+  check('switching a product off does not delete it', deactivated.data?.isActive === false);
+  const afterOff = await call('GET', `/products?q=${encodeURIComponent('Brie de Meaux')}`, csAgent);
+  check('an inactive product leaves the pickers', !afterOff.data?.some((p) => p.id === productId));
+  const settingsList = await call('GET', '/settings/products', admin);
+  check('but the settings page still lists it, with its enquiry count',
+    settingsList.data?.some((p) => p.id === productId && p.isActive === false && p.enquiries === 0));
+
+  const agentProduct = await call('POST', '/products', csAgent, { code: 'X-1', name: 'x' });
+  check('an agent cannot add products → 403', agentProduct.status === 403);
+  const agentList = await call('GET', '/settings/products', csAgent);
+  check('nor open the settings list → 403', agentList.status === 403);
+
   socket.close();
   console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
   process.exit(failures ? 1 : 0);

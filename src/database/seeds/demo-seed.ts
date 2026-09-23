@@ -1,3 +1,4 @@
+import { DataSource } from 'typeorm';
 import { ChatStatus, SenderType } from '../../common/constants/enums';
 import dataSource from '../data-source';
 import { demoOrders, demoScenarios, demoTags } from './demo-data';
@@ -11,13 +12,19 @@ import { demoOrders, demoScenarios, demoTags } from './demo-data';
 const DEMO_ID_PREFIX = 'd0000000-';
 const scenarioId = (key: number) => `${DEMO_ID_PREFIX}0000-4000-8000-${String(key).padStart(12, '0')}`;
 const minutes = (n: number) => n * 60_000;
-const reset = process.argv.includes('--reset');
-const clean = reset || process.argv.includes('--clean');
 
-async function seedDemo(): Promise<void> {
+export interface DemoSeedOptions {
+  /** also remove chats that are not part of the demo set (e.g. left by `npm run smoke`) */
+  clean?: boolean;
+  /** remove ALL chats so the demo set is rebuilt exactly as written */
+  reset?: boolean;
+}
+
+export async function seedDemo(ds: DataSource, options: DemoSeedOptions = {}): Promise<number> {
+  const reset = Boolean(options.reset);
+  const clean = reset || Boolean(options.clean);
   if (clean && process.env.NODE_ENV === 'production') throw new Error('--clean is for local databases only');
-  await dataSource.initialize();
-  const q = dataSource.createQueryRunner();
+  const q = ds.createQueryRunner();
   await q.startTransaction();
   let created = 0;
   try {
@@ -142,17 +149,29 @@ async function seedDemo(): Promise<void> {
     }
 
     await q.commitTransaction();
-    console.log(`demo data: ${created} enquiries added (${demoScenarios.length - created} already existed)`);
+    return created;
   } catch (e) {
     await q.rollbackTransaction();
     throw e;
   } finally {
     await q.release();
-    await dataSource.destroy();
   }
 }
 
-seedDemo().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (require.main === module) {
+  const options: DemoSeedOptions = {
+    clean: process.argv.includes('--clean'),
+    reset: process.argv.includes('--reset'),
+  };
+  void dataSource
+    .initialize()
+    .then(() => seedDemo(dataSource, options))
+    .then((created) =>
+      console.log(`demo data: ${created} enquiries added (${demoScenarios.length - created} already existed)`),
+    )
+    .catch((e) => {
+      console.error(e);
+      process.exitCode = 1;
+    })
+    .finally(() => dataSource.destroy());
+}

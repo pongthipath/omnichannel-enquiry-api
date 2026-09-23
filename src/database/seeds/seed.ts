@@ -1,12 +1,15 @@
 import * as argon2 from 'argon2';
+import { DataSource } from 'typeorm';
 import { toMask } from '../../common/permissions/permission-mask.util';
 import dataSource from '../data-source';
 import * as data from './seed-data';
 
-/** Idempotent: safe to run again (upserts by natural keys). `npm run seed` */
-async function seed(): Promise<void> {
-  await dataSource.initialize();
-  const q = dataSource.createQueryRunner();
+/**
+ * Idempotent: safe to run again (upserts by natural keys). Runs from `npm run seed`, and on every
+ * boot in development so a fresh checkout has data without anyone remembering to seed it.
+ */
+export async function seed(ds: DataSource): Promise<void> {
+  const q = ds.createQueryRunner();
   const passwordHash = await argon2.hash(data.DEV_PASSWORD, { type: argon2.argon2id });
 
   await q.startTransaction();
@@ -78,17 +81,22 @@ async function seed(): Promise<void> {
     }
 
     await q.commitTransaction();
-    console.log(`seeded — login with any seeded email and password "${data.DEV_PASSWORD}"`);
   } catch (e) {
     await q.rollbackTransaction();
     throw e;
   } finally {
     await q.release();
-    await dataSource.destroy();
   }
 }
 
-seed().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (require.main === module) {
+  void dataSource
+    .initialize()
+    .then(() => seed(dataSource))
+    .then(() => console.log(`seeded — login with any seeded email and password "${data.DEV_PASSWORD}"`))
+    .catch((e) => {
+      console.error(e);
+      process.exitCode = 1;
+    })
+    .finally(() => dataSource.destroy());
+}

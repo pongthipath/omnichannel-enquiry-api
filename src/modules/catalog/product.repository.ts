@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DeepPartial, Repository } from 'typeorm';
 import { Product } from './product.entity';
 
 /** Must match the expression of idx_product__search_trgm exactly, or Postgres won't use the index. */
@@ -57,5 +57,36 @@ export class ProductRepository {
 
   findById(id: string): Promise<Product | null> {
     return this.repo.findOne({ where: { id } });
+  }
+
+  findByCode(code: string): Promise<Product | null> {
+    return this.repo.findOne({ where: { code } });
+  }
+
+  /**
+   * The management page, unlike the picker: inactive products are shown too (they still appear on old
+   * enquiries), with how many enquiries mention each one so nobody deactivates something in daily use.
+   */
+  async listForSettings(): Promise<{ product: Product; enquiries: number }[]> {
+    const rows = await this.repo
+      .createQueryBuilder('product')
+      .leftJoin('chat', 'chat', 'chat.product_id = product.id')
+      .select('product')
+      .addSelect('COUNT(chat.id)', 'enquiries')
+      .groupBy('product.id')
+      .orderBy('product.code')
+      .getRawAndEntities();
+    return rows.entities.map((product, i) => ({
+      product,
+      enquiries: Number(rows.raw[i]?.enquiries ?? 0),
+    }));
+  }
+
+  create(input: DeepPartial<Product>): Product {
+    return this.repo.create(input);
+  }
+
+  save(product: Product): Promise<Product> {
+    return this.repo.save(product);
   }
 }

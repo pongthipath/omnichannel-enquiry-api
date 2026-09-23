@@ -1,10 +1,11 @@
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { RedisIoAdapter } from './common/realtime/redis-io.adapter';
+import { seedDevData } from './database/seeds/dev-seed';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true }); // raw body: webhook signatures
@@ -24,15 +25,21 @@ async function bootstrap(): Promise<void> {
   ioAdapter.connect();
   app.useWebSocketAdapter(ioAdapter);
 
-  const config = new DocumentBuilder()
-    .setTitle('Omnichannel Enquiry API')
-    .setDescription('Bearer JWT auth · every error uses ApiErrorDto (`code` = i18n key)')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config), {
-    swaggerOptions: { persistAuthorization: true },
-  });
+  // Swagger is a map of the whole API — useful everywhere except in front of the public internet
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Omnichannel Enquiry API')
+      .setDescription('Bearer JWT auth · every error uses ApiErrorDto (`code` = i18n key)')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config), {
+      swaggerOptions: { persistAuthorization: true },
+    });
+  }
+
+  // development: make sure the demo data is there, so a fresh checkout has something to look at
+  await seedDevData(app, new Logger('DevSeed'));
 
   await app.listen(Number(process.env.PORT ?? 4000));
 }
