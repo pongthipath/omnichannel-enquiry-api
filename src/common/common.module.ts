@@ -6,6 +6,7 @@ import { HealthController } from './health/health.controller';
 import { ShutdownState } from './health/shutdown.state';
 import { RealtimePublisher } from './realtime/realtime.publisher';
 import { RedisService } from './redis/redis.service';
+import { StorageService } from './storage/storage.service';
 
 /**
  * Shared building blocks used by every module (design §3 `common`).
@@ -28,8 +29,7 @@ import { RedisService } from './redis/redis.service';
   providers: [
     { provide: ShutdownState, useFactory: () => new ShutdownState() },
     RedisService,
-    RealtimePublisher,
-  ],
-  exports: [ShutdownState, RedisService, RealtimePublisher],
+    RealtimePublisher, StorageService],
+  exports: [ShutdownState, RedisService, RealtimePublisher, StorageService],
 })
 export class CommonModule {}

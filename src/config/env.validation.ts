@@ -25,6 +25,8 @@ export const envValidationSchema = Joi.object({
   S3_BUCKET: Joi.string().required(),
   S3_REGION: Joi.string().default('ap-southeast-1'),
   S3_ENDPOINT: Joi.string().optional(), // MinIO locally
+  S3_ACCESS_KEY: Joi.string().required(),
+  S3_SECRET_KEY: Joi.string().required(),
 
   JWT_SECRET: Joi.string().min(32).required(),
   JWT_ACCESS_TTL: Joi.string().default('15m'),

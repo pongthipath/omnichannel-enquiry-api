@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -22,12 +23,20 @@ import { Chat } from '../enquiry/chat.entity';
 import { ChatRepository } from '../enquiry/chat.repository';
 import { SlaService } from '../sla/sla.service';
 import { CustomerService } from '../../customer/customer.service';
+import { AttachmentService } from '../attachment/attachment.service';
+import { AttachmentKind } from '../attachment/chat-message-attachment.entity';
 import { StaffService } from '../../staff/profile/staff.service';
 import { ChatMessage } from './chat-message.entity';
 import { ChatMessageRepository } from './chat-message.repository';
 import { ListMessagesQuery, MessageDto, MessagePageDto, SendMessageDto } from './message.dto';
 
 const PREVIEW_LENGTH = 140;
+
+export interface InboundOptions {
+  channel: Channel;
+  externalMessageId?: string;
+  files?: { url: string; mimeType: string; fileName: string }[];
+}
 
 @Injectable()
 export class MessageService {
@@ -39,6 +48,7 @@ export class MessageService {
     private readonly realtime: RealtimePublisher,
     private readonly staff: StaffService,
     private readonly customers: CustomerService,
+    private readonly attachments: AttachmentService,
   ) {}
 
   async list(actor: Actor, chatId: string, query: ListMessagesQuery): Promise<MessagePageDto> {
@@ -52,9 +62,9 @@ export class MessageService {
       limit: limit + 1,
     });
     const page = rows.slice(0, limit);
-    const names = await this.senderNames(page);
+    const [names, files] = await Promise.all([this.senderNames(page), this.attachments.findForMessages(page.map((m) => m.id))]);
     return {
-      items: page.map((m) => MessageDto.from(m, (m.senderId && names.get(m.senderId)) || null)),
+      items: page.map((m) => MessageDto.from(m, (m.senderId && names.get(m.senderId)) || null, files.get(m.id) ?? [])),
       nextCursor: rows.length > limit ? page[page.length - 1].id : null,
     };
   }
@@ -82,10 +92,18 @@ export class MessageService {
     actor: Actor,
     chatId: string,
     dto: SendMessageDto,
+    /** webhook path: the real channel, the channel's message id (dedupe) and its image URLs */
+    inbound?: InboundOptions,
   ): Promise<{ message: MessageDto; created: boolean }> {
     if (isStaff(actor) && !actor.can(Permission.INBOX_CHAT_REPLY))
       throw new ForbiddenException('auth.forbidden');
     const isInternal = isStaff(actor) && Boolean(dto.isInternal);
+    const attachmentIds = dto.attachmentIds ?? [];
+    if (!dto.body.trim() && !attachmentIds.length && !(inbound?.files?.length)) throw new BadRequestException('message.empty');
+    const files = await this.attachments.findByIdsForSend(attachmentIds);
+    const channel = inbound?.channel ?? Channel.MOBILE_APP;
+    const sourceFiles = inbound?.files ?? [];
+    const hasImage = files.some((f) => f.kind === AttachmentKind.IMAGE) || sourceFiles.some((f) => f.mimeType.startsWith('image/'));
 
     const result = await this.dataSource.transaction(async (m) => {
       const chat = await this.chats.findByIdForUpdate(m, chatId);
@@ -104,16 +122,27 @@ export class MessageService {
       const id = await this.messages.insertIgnoringDuplicate(m, {
         chatId,
         clientMessageId: dto.clientMessageId ?? null,
-        channel: Channel.MOBILE_APP,
+        channel,
+        externalMessageId: inbound?.externalMessageId ?? null,
         senderType,
         senderId: actor.id,
-        messageType: MessageType.TEXT,
+        messageType: attachmentIds.length || sourceFiles.length ? (hasImage ? MessageType.IMAGE : MessageType.FILE) : MessageType.TEXT,
         body: dto.body,
         isInternal,
       });
       if (!id) {
-        const winner = await this.messages.findByClientMessageId(chatId, dto.clientMessageId!, m);
+        // lost the race on clientMessageId, or the channel already delivered this message id
+        const winner = inbound?.externalMessageId
+          ? await this.messages.findByExternalMessageId(channel, inbound.externalMessageId, m)
+          : await this.messages.findByClientMessageId(chatId, dto.clientMessageId!, m);
         return { chat, message: winner!, created: false, statusChanged: false };
+      }
+
+      await this.attachments.attachToMessage(m, attachmentIds, id);
+      // channel images: keep the channel URL now, the worker mirrors them into our bucket later
+      for (const f of sourceFiles) {
+        const created = await this.attachments.createFromUrl(m, f);
+        await this.attachments.attachToMessage(m, [created.id], id);
       }
 
       const statusChanged = isInternal
@@ -121,9 +150,9 @@ export class MessageService {
         : await this.applyAutomaticTransitions(m, chat, actor, now);
       if (!isInternal) {
         chat.lastMessageAt = now;
-        chat.lastMessagePreview = dto.body.slice(0, PREVIEW_LENGTH);
+        chat.lastMessagePreview = (dto.body.trim() || (hasImage ? '[รูปภาพ]' : '[ไฟล์แนบ]')).slice(0, PREVIEW_LENGTH);
         chat.lastMessageSenderType = senderType;
-        chat.lastMessageChannel = Channel.MOBILE_APP;
+        chat.lastMessageChannel = channel;
         if (senderType === SenderType.CUSTOMER) chat.unreadByStaffCount += 1;
         else chat.unreadByStaffCount = 0; // answering means the team has read it
       }
@@ -137,9 +166,11 @@ export class MessageService {
     });
 
     const names = await this.senderNames([result.message]);
+    const sentFiles = await this.attachments.findForMessages([result.message.id]);
     const message = MessageDto.from(
       result.message,
       (result.message.senderId && names.get(result.message.senderId)) || null,
+      sentFiles.get(result.message.id) ?? [],
     );
     if (result.created) {
       this.realtime.emit(

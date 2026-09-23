@@ -13,3 +13,9 @@ export const multiplyDecimal = (a: Numeric, b: Numeric, scale = 2): string =>
 
 export const roundDecimal = (value: Numeric, scale = 2): string =>
   new Decimal(value).toFixed(scale, Decimal.ROUND_HALF_UP);
+
+/** Postgres numeric ↔ string: keeps money exact (JS numbers would round it). */
+export const decimalTransformer = {
+  to: (value?: string | null) => value,
+  from: (value: string | null): string => (value === null ? '0.00' : roundDecimal(value)),
+};

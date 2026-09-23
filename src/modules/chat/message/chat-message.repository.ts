@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
+import { Channel } from '../../../common/constants/enums';
 import { ChatMessage } from './chat-message.entity';
 
 @Injectable()
@@ -31,6 +32,13 @@ export class ChatMessageRepository {
   findByClientMessageId(chatId: string, clientMessageId: string, manager?: EntityManager) {
     return (manager ? manager.getRepository(ChatMessage) : this.repo).findOne({
       where: { chatId, clientMessageId },
+    });
+  }
+
+  /** Webhook retries carry the same channel message id — this returns the copy we already stored. */
+  findByExternalMessageId(channel: Channel, externalMessageId: string, manager?: EntityManager) {
+    return (manager ? manager.getRepository(ChatMessage) : this.repo).findOne({
+      where: { channel, externalMessageId },
     });
   }
 

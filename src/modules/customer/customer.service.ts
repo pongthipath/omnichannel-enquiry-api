@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { StaffActor } from '../../common/auth/actor';
+import { Channel } from '../../common/constants/enums';
 import { Permission } from '../../common/permissions/permission.enum';
 import { RealtimePublisher, rooms } from '../../common/realtime/realtime.publisher';
 import {
@@ -14,6 +15,7 @@ import {
   ListCustomersQuery,
   UpdateCustomerDto,
 } from './customer.dto';
+import { CustomerOrderDto } from './order/customer-order.dto';
 import { Customer } from './profile/customer.entity';
 import { CustomerRepository } from './profile/customer.repository';
 
@@ -106,6 +108,43 @@ export class CustomerService {
       id,
       action: 'updated',
       version: profile.version,
+      data: profile,
+    });
+    return profile;
+  }
+
+  /**
+   * Webhook path: who wrote from this channel. Unknown sender → an unverified (placeholder) customer
+   * that staff can later merge into the real one (design §8.5).
+   */
+  async resolveFromChannel(channel: Channel, externalId: string, displayName?: string): Promise<Customer> {
+    const known = await this.customers.findByChannel(channel, externalId);
+    if (known) return known;
+    return this.customers.createPlaceholderWithChannel({ channel, externalId, displayName });
+  }
+
+  /** Orders shown in the Customer 360 panel (design §12). */
+  async orders(customerId: string): Promise<CustomerOrderDto[]> {
+    await this.getById(customerId);
+    return (await this.customers.ordersFor(customerId)).map(CustomerOrderDto.from);
+  }
+
+  /**
+   * Fold an unverified customer (created from a channel) into the real one. Everything they wrote
+   * moves across, so the team keeps one history per customer.
+   */
+  async merge(placeholderId: string, targetId: string): Promise<CustomerProfileDto> {
+    if (placeholderId === targetId) throw new ConflictException('customer.mergeSame');
+    const [placeholder, target] = await Promise.all([this.getById(placeholderId), this.getById(targetId)]);
+    if (!placeholder.isPlaceholder) throw new ConflictException('customer.notPlaceholder');
+    if (target.isPlaceholder) throw new ConflictException('customer.targetIsPlaceholder');
+
+    await this.customers.mergeInto(placeholderId, targetId);
+    const profile = await this.getProfile(targetId, true);
+    this.realtime.emit('customer.updated', [rooms.allStaff], {
+      entity: 'customer',
+      id: targetId,
+      action: 'updated',
       data: profile,
     });
     return profile;

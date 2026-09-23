@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, In, Not, Repository } from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { Actor } from '../../../common/auth/actor';
 import { ChatStatus } from '../../../common/constants/enums';
@@ -55,6 +55,17 @@ export class ChatRepository {
 
   findById(id: string, manager?: EntityManager): Promise<Chat | null> {
     return this.r(manager).findOne({ where: { id } });
+  }
+
+  /**
+   * The enquiry an inbound channel message joins: the customer's most recent one that is not
+   * finished. Nothing open → the webhook starts a new enquiry (design §8.5).
+   */
+  findLatestOpenForCustomer(customerId: string): Promise<Chat | null> {
+    return this.repo.findOne({
+      where: { customerId, status: Not(In([ChatStatus.RESOLVED, ChatStatus.CLOSED])) },
+      order: { lastMessageAt: 'DESC' },
+    });
   }
 
   /** Row lock for status/assignment changes inside a transaction. */

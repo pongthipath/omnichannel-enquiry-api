@@ -1,6 +1,6 @@
 import { ChatStatus, SenderType } from '../../common/constants/enums';
 import dataSource from '../data-source';
-import { demoScenarios, demoTags } from './demo-data';
+import { demoOrders, demoScenarios, demoTags } from './demo-data';
 
 /**
  * Mock enquiries + conversations for demos (`npm run seed:demo`, after `npm run seed`).
@@ -128,6 +128,19 @@ async function seedDemo(): Promise<void> {
         );
       }
     }
+
+    // orders behind the Customer 360 panel — order_no is unique, so running again changes nothing
+    const days = (n: number) => new Date(Date.now() - n * 86_400_000);
+    for (const o of demoOrders) {
+      await q.query(
+        `INSERT INTO customer_order (customer_id, order_no, ordered_at, status, total_amount, currency, items_summary, delivered_at)
+         SELECT c.id, $1::varchar, $2::timestamptz, $3::varchar, $4::numeric, 'THB', $5::varchar, $6::timestamptz
+         FROM customer c WHERE c.code = $7::varchar
+         ON CONFLICT (order_no) DO NOTHING`,
+        [o.orderNo, days(o.daysAgo), o.status, o.totalAmount, o.itemsSummary, o.deliveredDaysAgo === undefined ? null : days(o.deliveredDaysAgo), o.customer],
+      );
+    }
+
     await q.commitTransaction();
     console.log(`demo data: ${created} enquiries added (${demoScenarios.length - created} already existed)`);
   } catch (e) {

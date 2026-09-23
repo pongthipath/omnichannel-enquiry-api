@@ -141,3 +141,9 @@ export class UpdateCustomerDto {
   @IsInt()
   version?: number;
 }
+
+export class MergeCustomerDto {
+  @ApiProperty({ format: 'uuid', description: 'the real customer this unverified one belongs to' })
+  @IsUUID()
+  targetCustomerId: string;
+}

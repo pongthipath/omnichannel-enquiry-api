@@ -173,3 +173,28 @@ export const demoTags: {
   { name: 'ลูกค้าโรงแรม', color: 'cyan', appliesTo: 'CUSTOMER', description: 'กลุ่มลูกค้าโรงแรมและจัดเลี้ยง', scenarios: [] },
   { name: 'สต็อกไม่พอ', color: 'gray', appliesTo: 'ENQUIRY', description: 'ต้องเช็กกับคลังสินค้าก่อนตอบ', scenarios: [1] },
 ];
+
+export interface DemoOrder {
+  customer: string; // customer.code
+  orderNo: string;
+  daysAgo: number;
+  status: 'PENDING' | 'CONFIRMED' | 'DELIVERING' | 'DELIVERED' | 'CANCELLED';
+  totalAmount: string;
+  itemsSummary: string;
+  deliveredDaysAgo?: number;
+}
+
+/** Orders behind the Customer 360 panel — the numbers staff quote when answering "ของถึงไหนแล้ว". */
+export const demoOrders: DemoOrder[] = [
+  { customer: 'CUS-00128', orderNo: 'SO-58812', daysAgo: 2, status: 'DELIVERING', totalAmount: '18400.00', itemsSummary: 'Mozzarella 2.3kg ×8, เนยจืด 250g ×24' },
+  { customer: 'CUS-00128', orderNo: 'SO-58690', daysAgo: 11, status: 'DELIVERED', totalAmount: '12750.00', itemsSummary: 'Mozzarella 2.3kg ×5, ครีมสด 1L ×12', deliveredDaysAgo: 9 },
+  { customer: 'CUS-00128', orderNo: 'SO-58402', daysAgo: 33, status: 'DELIVERED', totalAmount: '9980.00', itemsSummary: 'ชีสเชดดาร์แผ่น ×20', deliveredDaysAgo: 31 },
+  { customer: 'CUS-00201', orderNo: 'SO-58845', daysAgo: 1, status: 'CONFIRMED', totalAmount: '46200.00', itemsSummary: 'เนยจืด 250g ×120, ชีสเชดดาร์ 1kg ×30' },
+  { customer: 'CUS-00201', orderNo: 'SO-58551', daysAgo: 20, status: 'DELIVERED', totalAmount: '38900.00', itemsSummary: 'ครีมสด 1L ×60, Mozzarella 2.3kg ×15', deliveredDaysAgo: 18 },
+  { customer: 'CUS-00077', orderNo: 'SO-58877', daysAgo: 0, status: 'PENDING', totalAmount: '7350.00', itemsSummary: 'โยเกิร์ตถัง 5kg ×6' },
+  { customer: 'CUS-00077', orderNo: 'SO-58318', daysAgo: 41, status: 'CANCELLED', totalAmount: '5200.00', itemsSummary: 'ชีสครีม 1kg ×10 (ลูกค้ายกเลิกเอง)' },
+  { customer: 'CUS-00310', orderNo: 'SO-58801', daysAgo: 3, status: 'DELIVERED', totalAmount: '15600.00', itemsSummary: 'Mozzarella 2.3kg ×10', deliveredDaysAgo: 1 },
+  { customer: 'CUS-00310', orderNo: 'SO-58620', daysAgo: 15, status: 'DELIVERED', totalAmount: '21400.00', itemsSummary: 'เนยจืด 250g ×48, ครีมสด 1L ×24', deliveredDaysAgo: 13 },
+  { customer: 'CUS-00415', orderNo: 'SO-58860', daysAgo: 1, status: 'DELIVERING', totalAmount: '28750.00', itemsSummary: 'ชีสเชดดาร์ 1kg ×25, โยเกิร์ตถัง 5kg ×10' },
+  { customer: 'CUS-00415', orderNo: 'SO-58733', daysAgo: 8, status: 'DELIVERED', totalAmount: '11200.00', itemsSummary: 'ครีมสด 1L ×30', deliveredDaysAgo: 6 },
+];

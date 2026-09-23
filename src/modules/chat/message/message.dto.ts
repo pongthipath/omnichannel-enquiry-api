@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsInt,
   IsOptional,
@@ -9,9 +11,10 @@ import {
   Max,
   MaxLength,
   Min,
-  MinLength,
 } from 'class-validator';
 import { Channel, MessageType, SenderType } from '../../../common/constants/enums';
+import { AttachmentDto } from '../attachment/attachment.dto';
+import { ChatMessageAttachment } from '../attachment/chat-message-attachment.entity';
 import { ChatMessage } from './chat-message.entity';
 
 export class SendMessageDto {
@@ -20,11 +23,17 @@ export class SendMessageDto {
   @IsUUID()
   clientMessageId?: string;
 
-  @ApiProperty({ example: 'ส่งรูปวันหมดอายุให้แล้วค่ะ', maxLength: 5000 })
+  @ApiProperty({ example: 'ส่งรูปวันหมดอายุให้แล้วค่ะ', maxLength: 5000, description: 'may be empty when files are attached' })
   @IsString()
-  @MinLength(1)
   @MaxLength(5000)
   body: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'ids from POST /attachments (max 5)' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @IsUUID('all', { each: true })
+  attachmentIds?: string[];
 
   @ApiPropertyOptional({
     default: false,
@@ -66,8 +75,9 @@ export class MessageDto {
   @ApiProperty() createdAt: Date;
   @ApiPropertyOptional({ nullable: true, example: 'สุดา (CS)', description: 'staff name or customer contact' })
   senderName: string | null;
+  @ApiProperty({ type: [AttachmentDto] }) attachments: AttachmentDto[];
 
-  static from(m: ChatMessage, senderName: string | null = null): MessageDto {
+  static from(m: ChatMessage, senderName: string | null = null, attachments: ChatMessageAttachment[] = []): MessageDto {
     return {
       id: m.id,
       chatId: m.chatId,
@@ -76,6 +86,7 @@ export class MessageDto {
       senderType: m.senderType,
       senderId: m.senderId,
       senderName,
+      attachments: attachments.map(AttachmentDto.from),
       messageType: m.messageType,
       body: m.body,
       eventData: m.eventData,

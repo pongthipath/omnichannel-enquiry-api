@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CustomerModule } from '../customer/customer.module';
+import { AttachmentController } from './attachment/attachment.controller';
+import { AttachmentRepository } from './attachment/attachment.repository';
+import { AttachmentService } from './attachment/attachment.service';
+import { ChatMessageAttachment } from './attachment/chat-message-attachment.entity';
 import { StaffModule } from '../staff/staff.module';
 import { DashboardController } from './dashboard/dashboard.controller';
 import { DashboardService } from './dashboard/dashboard.service';
@@ -13,6 +17,7 @@ import { ChatMessageRepository } from './message/chat-message.repository';
 import { MessageController } from './message/message.controller';
 import { MessageService } from './message/message.service';
 import { SlaPolicy } from './sla/sla-policy.entity';
+import { SlaController } from './sla/sla.controller';
 import { SlaService } from './sla/sla.service';
 import { ChatTag } from './tag/chat-tag.entity';
 import { TagController } from './tag/tag.controller';
@@ -23,11 +28,11 @@ import { TagService } from './tag/tag.service';
 /** Sub-modules: enquiry, message, sla, tag, dashboard (design §16.1). */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Chat, ChatMessage, SlaPolicy, Tag, ChatTag]),
+    TypeOrmModule.forFeature([Chat, ChatMessage, SlaPolicy, Tag, ChatTag, ChatMessageAttachment]),
     StaffModule,
     CustomerModule,
   ],
-  controllers: [EnquiryController, MessageController, TagController, DashboardController],
+  controllers: [EnquiryController, MessageController, TagController, DashboardController, AttachmentController, SlaController],
   providers: [
     ChatRepository,
     ChatMessageRepository,
@@ -37,7 +42,9 @@ import { TagService } from './tag/tag.service';
     TagRepository,
     TagService,
     DashboardService,
+    AttachmentRepository,
+    AttachmentService,
   ],
-  exports: [EnquiryService, MessageService], // facade for sync / webhook modules
+  exports: [EnquiryService, MessageService, AttachmentService, SlaService, ChatRepository], // facade for sync / webhook modules
 })
 export class ChatModule {}

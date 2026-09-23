@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
 } from '@nestjs/common';
 import {
@@ -20,10 +21,12 @@ import { Actor, isStaff, StaffActor } from '../../common/auth/actor';
 import { CurrentActor, RequirePermission } from '../../common/auth/auth.decorators';
 import { ApiErrorDto } from '../../common/dto/api-error.dto';
 import { Permission } from '../../common/permissions/permission.enum';
+import { CustomerOrderDto } from './order/customer-order.dto';
 import {
   CustomerPageDto,
   CustomerProfileDto,
   ListCustomersQuery,
+  MergeCustomerDto,
   UpdateCustomerDto,
 } from './customer.dto';
 import { CustomerService } from './customer.service';
@@ -65,6 +68,31 @@ export class CustomerController {
       : actor.id === id;
     if (!allowed) throw new ForbiddenException('auth.forbidden');
     return this.customers.getProfile(id, isStaff(actor));
+  }
+
+  @Get(':id/orders')
+  @RequirePermission(Permission.CUSTOMER_PANEL_ORDERS_VIEW)
+  @ApiOperation({ summary: 'Recent orders of the customer (Customer 360 panel)' })
+  @ApiOkResponse({ type: [CustomerOrderDto] })
+  orders(@Param('id', ParseUUIDPipe) id: string): Promise<CustomerOrderDto[]> {
+    return this.customers.orders(id);
+  }
+
+  @Post(':id/merge')
+  @RequirePermission(Permission.CUSTOMERS_PLACEHOLDER_MERGE)
+  @ApiOperation({
+    summary: 'Merge this unverified customer into a real one (channels, enquiries and orders move across)',
+  })
+  @ApiOkResponse({ type: CustomerProfileDto })
+  @ApiConflictResponse({
+    type: ApiErrorDto,
+    description: 'customer.notPlaceholder · customer.targetIsPlaceholder · customer.mergeSame',
+  })
+  merge(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: MergeCustomerDto,
+  ): Promise<CustomerProfileDto> {
+    return this.customers.merge(id, dto.targetCustomerId);
   }
 
   @Patch(':id')

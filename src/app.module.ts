@@ -13,6 +13,7 @@ import { ChatModule } from './modules/chat/chat.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { SyncModule } from './modules/sync/sync.module';
+import { WebhookModule } from './modules/webhook/webhook.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SyncModule } from './modules/sync/sync.module';
     CatalogModule,
     ChatModule,
     SyncModule,
+    WebhookModule,
   ],
   providers: [
     // guard + gateway live here because they need the staff module's ActorResolver
